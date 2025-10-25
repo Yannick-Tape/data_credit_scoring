@@ -1,0 +1,417 @@
+# Exécute dans Jupyter si tu n'as pas fait l'installation dans le terminal
+%pip install -q pandas pyarrow requests tqdm
+
+
+######################
+
+import os
+os.makedirs("../data_work", exist_ok=True)
+os.makedirs("../data_raw/hmda", exist_ok=True)
+
+
+# TEST: Simple Requête sur API (Etat de NY sur l'année 2021)
+
+import requests, pandas as pd
+import pyarrow as pa, pyarrow.parquet as pq
+
+API = "https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations"
+
+params = {
+    "years": "2021",
+    "states": "NY",
+    "actions_taken": "1,2,3,6,7",  # 1=Approved; 2/3/6/7 autres statuts
+    # Tu peux ajouter d'autres filtres docs: loan_types, loan_purposes, races, ethnicities, counties, msamds...
+}
+
+resp = requests.get(API, params=params, timeout=120)
+resp.raise_for_status()  # stoppe si HTTP ≠ 200
+
+js = resp.json()
+df = pd.DataFrame(js.get("aggregations", []))
+print("Colonnes:", df.columns.tolist())
+display(df.head())
+
+pq.write_table(pa.Table.from_pandas(df), "../data_work/hmda_api_sample.parquet")
+print("Écrit ../data_work/hmda_api_sample.parquet | lignes:", len(df))
+
+
+#########################
+
+Super M. NAPO; 
+
+sanity check API fonctionne bien.
+on a obtenu un petit tableau d’agrégats pour NY en 2021 écrit en Parquet (c'est adapté pour le big data donc c'est une version csv pour données volumineuse). En nous reférant à la documentation de l'API, voyons ce que ça veut dire, puis on enchaîne proprement vers le row-level (micro-données), indispensable pour la suite (nos modèles ne sont applicables qu'au micro-données).
+
+actions_taken : code HMDA de l’issue de la demande :
+    1 = originated / approved (prêt effectivement octroyé)
+    2 = approved mais non accepté par l’emprunteur
+    3 = refusé
+    6 = purchased loan (prêt racheté sur le marché secondaire)
+    7 = preapproval denied (pré-approbation refusée)
+    count : nombre d’enregistrements correspondant à ce code d’issue, dans le périmètre filtré (NY, 2021 ici).
+    sum : somme agrégée d’une métrique que l’API calcule par défaut (typiquement la somme des montants de prêts quand dispo). C’est utile pour une
+            sanity check, mais pas exploitable pour nos modèles.
+
+----->  Ces agrégats prouvent que l’API répond, que nos filtres sont valides, et que l’écriture Parquet marche.
+----->  Pour entraîner des modèles, mesurer la fairness (et si possible joindre ACS plus tard), il nous faut les micro-données (row-level).
+
+
+CEPENDANT, NOUS AVONS RENCONTRER UN PROBLEME ET AVONS RESOLUE COMME SUIT :
+
+L’API HMDA Data Browser n’accepte pas toutes les années. D’après la doc officielle, le filtre years est limité aux millésimes récents (2018, 2019, 2020, 2021, 2022) pour l’API Data Browser (les années plus anciennes sont à récupérer via les static datasets et non via cet endpoint). Donc appeler l’API avec years=2004 (par exemple) déclenche une Error 400.
+
+Pour les années de 2004 à 2017 ont utilisera les fichiers historiques (bulk/static datasets) au lieu de l’API Data Browser. Pour 2018 jusqu'à 2022 normalement (si possible, étendre à avec 2023 et 2024), l’API marche très bien pour les agrégats rapides et des extractions ciblées.
+
+
+
+#################
+
+# Commençons par restreindre la boucle aux années supportées par l’API
+
+import time, requests, pandas as pd
+from tqdm import tqdm
+
+API = "https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations"
+
+# Années acceptées par l'API Data Browser d'après la doc. On a essayer d'étendre à avec 2023 et 2024 
+# avec succès donc l'API les a ajoutées
+
+API_YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]  # essaie ensuite d'ajouter 2023, 2024 si nécessaire
+STATES = ["NY","NJ","CT"]
+
+rows = []
+for year in API_YEARS:
+    for st in STATES:
+        params = {
+            "years": str(year),
+            "states": st,
+            "actions_taken": "1,2,3,6,7",
+        }
+        try:
+            r = requests.get(API, params=params, timeout=120)
+            if r.status_code == 429:
+                # Trop de requêtes -> on attend un peu et on retente une fois
+                time.sleep(2)
+                r = requests.get(API, params=params, timeout=120)
+            r.raise_for_status()
+            data = r.json().get("aggregations", [])
+            for rec in data:
+                rec["year"] = year
+                rec["state"] = st
+                rows.append(rec)
+        except requests.HTTPError as e:
+            print(f"Skip {year} {st}: {e}")
+            continue
+
+agg_tri = pd.DataFrame(rows)
+agg_tri.to_parquet("../data_work/hmda_api_aggregates_tristate_2018_2022.parquet", index=False)
+print("écrit agrégats:", agg_tri.shape)
+agg_tri.head()
+
+
+#############
+
+
+# Commençons par restreindre la boucle aux années supportées par l’API
+
+import time, requests, pandas as pd
+from tqdm import tqdm
+
+API = "https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations"
+
+# Années acceptées par l'API Data Browser d'après la doc. On a essayer d'étendre à avec 2023 et 2024 
+# avec succès donc l'API les a ajoutées
+
+API_YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]  # essaie ensuite d'ajouter 2023, 2024 si nécessaire
+STATES = ["NY","NJ","CT"]
+
+rows = []
+for year in API_YEARS:
+    for st in STATES:
+        params = {
+            "years": str(year),
+            "states": st,
+            "actions_taken": "1,2,3,6,7",
+        }
+        try:
+            r = requests.get(API, params=params, timeout=120)
+            if r.status_code == 429:
+                # Trop de requêtes -> on attend un peu et on retente une fois
+                time.sleep(2)
+                r = requests.get(API, params=params, timeout=120)
+            r.raise_for_status()
+            data = r.json().get("aggregations", [])
+            for rec in data:
+                rec["year"] = year
+                rec["state"] = st
+                rows.append(rec)
+        except requests.HTTPError as e:
+            print(f"Skip {year} {st}: {e}")
+            continue
+
+agg_tri = pd.DataFrame(rows)
+agg_tri.to_parquet("../data_work/hmda_api_aggregates_tristate_2018_2024.parquet", index=False)
+print("écrit agrégats:", agg_tri.shape)
+agg_tri.head()
+
+
+#################
+
+
+# contrôles indispensables (qualité de base)
+
+# 1) années et états réellement présents
+print("Années:", sorted(agg_tri['year'].unique()))
+print("États :", sorted(agg_tri['state'].unique()))
+
+# 2) on s’attend à 5 lignes par (année, État) = 5 codes actions_taken (1,2,3,6,7)
+chk = agg_tri.groupby(['year','state'])['actions_taken'].nunique().reset_index(name='n_codes')
+display(chk.sort_values(['year','state']))  # doit être = 5 partout
+
+# 3) check de valeurs manquantes
+display(agg_tri.isna().mean().to_frame('missing_ratio'))
+
+
+################
+
+
+Ces agrégats nous ont énormement renseigné sur l'API puisque nous savons ce qu'il est possible d'en extraire. Nous venons de vérifier l’API et faire un « coup d’œil » macro. Pour la suite (modèles, fairness, fusion ACS), on a besoin des micro-données (row-level).
+
+Récupérons les historiques “bulk/static” 2004–2017 grace aux ligne aux lignes de code ci-dessous
+
+Nous allons utiliser le HMDA Data Science Kit du CFPB, qui fournit des scripts de téléchargement automatisés pour les fichiers LAR (Loan Application Register), Panel et Transmittal Sheet de 2004 à 2022, avec des scripts de décompression et des exemples d’usage prêts à l’emploi.
+ 
+ Le README précise qu’il faut télécharger manuellement 2015–2016 (site FFIEC non “scrapable”) : les scripts skip ces années si les fichiers ne sont pas déjà présents.
+
+
+##################
+
+import os, pathlib, glob, textwrap, json, subprocess
+
+HOME = str(pathlib.Path("~").expanduser())
+proj = os.path.join(HOME, "tri_state_ai")
+kit_dir = os.path.join(proj, "HMDA_Data_Science_Kit")
+
+print("KIT_DIR:", kit_dir)
+print("\nContenu racine (30 premiers éléments):")
+for p in sorted(os.listdir(kit_dir))[:30]:
+    print(" -", p)
+
+# Chercher un README* n'importe où (md, rst, txt…)
+readmes = []
+for pat in ("README*", "readme*", "*.rst", "*.md", "*.txt"):
+    readmes.extend(glob.glob(os.path.join(kit_dir, "**", pat), recursive=True))
+readmes = [p for p in readmes if os.path.isfile(p) and "LICENSE" not in os.path.basename(p)]
+print("\nREADMEs possibles trouvés:", len(readmes))
+for p in sorted(readmes)[:10]:
+    print(" -", p)
+
+# Chercher les scripts utiles
+script_candidates = []
+for pat in ("download*.sh", "unzip*.sh", "*.py"):
+    script_candidates.extend(glob.glob(os.path.join(kit_dir, "**", pat), recursive=True))
+
+# Filtrer sur les noms probables
+dl_scripts = [p for p in script_candidates if os.path.basename(p) in (
+    "download_hmda.sh", "unzip_all.sh", "unzip_and_rename_lar.sh"
+)]
+print("\nScripts de téléchargement/décompression repérés:", len(dl_scripts))
+for p in sorted(dl_scripts):
+    print(" -", p)
+
+
+#######################
+
+# On se place dans le dossier des scripts
+%cd "/home/ubuntu/tri_state_ai/HMDA_Data_Science_Kit/download_scripts"
+
+# (le script récupère tout ce qui manque ; s'il ne peut pas prendre certains millésimes, il les "skippe" et l'indique)
+!bash download_hmda.sh -l
+
+
+####################
+
+Récupérons l’URL par année (depuis le dépôt du kit)
+
+Le dépôt que qu'on a cloné contient hmda_data_links.md avec les liens officiels. On va extraire automatiquement l’URL LAR par année, puis traiter année par année en économisant le disque.
+
+# 1) Afficher les 200 premières lignes de hmda_data_links.md
+links_file = "/home/ubuntu/tri_state_ai/HMDA_Data_Science_Kit/hmda_data_links.md"
+with open(links_file, "r", encoding="utf-8", errors="ignore") as f:
+    for i, line in enumerate(f):
+        if i > 200: break
+        print(f"{i+1:03}: {line.rstrip()}")
+
+# 2) Extraire toutes les URLs visibles (peu importe l'extension) pour voir le pattern réel
+import re
+with open(links_file, "r", encoding="utf-8", errors="ignore") as f:
+    text = f.read()
+
+all_urls = re.findall(r"https?://[^\s\)\]]+", text)
+print("Nb d'URL trouvées:", len(all_urls))
+for u in all_urls[:20]:
+    print(" -", u)
+
+# 3) Chercher dans TOUT le dépôt des patterns utiles (.z/.zip + 'lar' + année)
+import glob, os
+repo = "/home/ubuntu/tri_state_ai/HMDA_Data_Science_Kit"
+cands = glob.glob(os.path.join(repo, "**", "*.*"), recursive=True)
+hits = []
+pat = re.compile(r"https?://[^\s\)\]]+(lar|LAR)[^\s\)\]]+(19|20)\d{2}\.(z|Z|zip|ZIP)")
+for p in cands:
+    # lire de petits fichiers texte seulement
+    try:
+        if os.path.getsize(p) > 2_000_000:
+            continue
+        with open(p, "r", encoding="utf-8", errors="ignore") as f:
+            txt = f.read()
+        for m in pat.findall(txt):
+            hits.append((p, m))
+    except:
+        pass
+
+print("Hits potentiels (fichiers contenant des URLs lar_YYYY.zip/.z):", len(hits))
+for h in hits[:10]:
+    print(" -", h[0], "→", h[1])
+
+
+####################
+
+
+import os, glob, pathlib
+
+HOME = str(pathlib.Path("~").expanduser())
+kit_dir = os.path.join(HOME, "tri_state_ai", "HMDA_Data_Science_Kit")
+z_dir   = os.path.join(kit_dir, "download_scripts", "data", "lar")  # où le script met les .z
+
+z_files = sorted(glob.glob(os.path.join(z_dir, "lar_*.z")))
+print("Fichiers .z détectés:", len(z_files))
+for p in z_files[:10]:
+    sz = os.path.getsize(p)/1024/1024
+    print(f" - {os.path.basename(p)}  ~{sz:.1f} MB")
+
+print("\nAstuce: on traitera 1 fichier → on écrit → on supprime → suivant (économie d’espace).")
+
+
+####################
+
+
+import requests, os, pathlib
+
+HOME = str(pathlib.Path("~").expanduser())
+dest = os.path.join(HOME, "tri_state_ai", "data_raw", "hmda")
+os.makedirs(dest, exist_ok=True)
+
+# Exemple pour 2004 :
+url = "https://catalog.archives.gov/download/5716418"  # (Final LAR 2004)
+out = os.path.join(dest, "lar_2004.zip")
+
+print("Téléchargement :", url)
+r = requests.get(url, stream=True, timeout=600)
+r.raise_for_status()
+with open(out, "wb") as f:
+    for chunk in r.iter_content(chunk_size=1024*1024):
+        if chunk:
+            f.write(chunk)
+print("Enregistré :", out, f"({os.path.getsize(out)/1024/1024:.1f} MB)")
+
+####################
+
+on va écrire une cellule complète Python prête à exécuter dans ton notebook, qui télécharge automatiquement toutes les années 2004–2017 depuis les archives nationales américaines (NARA), selon les identifiants déjà présents dans notre fichier hmda_data_links.md.
+
+
+
+# === HMDA 2017 — ALL RECORDS (CFPB) ===
+# Objectifs :
+#  1) Télécharger l’archive "hmda_2017_nationwide_all-records_labels.zip" (All records) depuis CFPB
+#  2) Calculer une empreinte SHA-256 pour la traçabilité (optionnel mais pro)
+#  3) Décompresser dans ~/tri_state_ai/data_raw/hmda/
+#  4) Lister les fichiers extraits (CSV/TXT)
+
+import os, pathlib, requests, hashlib, zipfile
+
+HOME = str(pathlib.Path("~").expanduser())
+dest_dir = os.path.join(HOME, "tri_state_ai", "data_raw", "hmda")
+os.makedirs(dest_dir, exist_ok=True)
+
+# URL officielle "All records" 2017 (hébergée par CFPB)
+# Réf. nom de fichier : "hmda_2017_nationwide_all-records_labels.zip"
+# Voir pages "Download HMDA data (2007–2017)" et mirroirs (DataLumos/OpenICPSR).
+url = "https://files.consumerfinance.gov/hmda-historic-loan-data/hmda_2017_nationwide_all-records_labels.zip"
+
+out_zip = os.path.join(dest_dir, "hmda_2017_nationwide_all-records_labels.zip")
+
+# 1) Téléchargement (avec reprise si déjà présent)
+if not os.path.exists(out_zip):
+    print("⬇️  Téléchargement :", url)
+    with requests.get(url, stream=True, timeout=600) as r:
+        r.raise_for_status()
+        with open(out_zip, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024*1024):
+                if chunk:
+                    f.write(chunk)
+else:
+    print("⏩ Fichier déjà présent :", out_zip)
+
+# Taille de l’archive
+size_mb = os.path.getsize(out_zip)/1024/1024
+print(f"✅ Archive : {out_zip}  ({size_mb:.1f} MB)")
+
+# 2) Empreinte SHA-256 (pour journaliser la source exacte utilisée)
+h = hashlib.sha256()
+with open(out_zip, "rb") as f:
+    for chunk in iter(lambda: f.read(1024*1024), b""):
+        h.update(chunk)
+sha256 = h.hexdigest()
+print("SHA256 :", sha256)
+
+# 3) Décompression
+print("📦 Décompression…")
+with zipfile.ZipFile(out_zip, "r") as z:
+    z.extractall(dest_dir)
+print("✅ Décompressé dans :", dest_dir)
+
+# 4) Lister les fichiers HMDA 2017 extraits
+print("\nFichiers 2017 extraits :")
+for fn in sorted(os.listdir(dest_dir)):
+    if fn.lower().startswith("hmda_2017"):
+        print(" -", fn)
+
+#################### On viens d'obtenir un bug ci dessus à cause de notre capacité de stockage limité de notre VM
+
+
+import zipfile, io, pandas as pd, pyarrow as pa, pyarrow.parquet as pq, os, pathlib
+
+HOME = str(pathlib.Path("~").expanduser())
+zip_path = os.path.join(HOME, "tri_state_ai", "data_raw", "hmda", "hmda_2017_nationwide_all-records_labels.zip")
+out_parquet = os.path.join(HOME, "tri_state_ai", "data_work", "hmda_2017_tristate.parquet")
+tri_states = {"36","34","09"}
+
+with zipfile.ZipFile(zip_path) as z:
+    csv_name = [n for n in z.namelist() if n.lower().endswith((".csv",".txt"))][0]
+    print("Lecture stream :", csv_name)
+    with z.open(csv_name) as f:
+        reader = pd.read_csv(f, chunksize=200_000, low_memory=False)
+        total = 0
+        for chunk in reader:
+            cols = [c.strip().lower() for c in chunk.columns]
+            chunk.columns = cols
+            # trouver colonne d'état
+            state_col = None
+            for c in ["state_code","state","st","statefips"]:
+                if c in chunk.columns:
+                    state_col = c; break
+            if state_col:
+                sub = chunk[chunk[state_col].astype(str).str.replace(r"\D","",regex=True).isin(tri_states)]
+            else:
+                sub = chunk
+            if len(sub):
+                sub["year"] = 2017
+                table = pa.Table.from_pandas(sub, preserve_index=False)
+                if not os.path.exists(out_parquet):
+                    pq.write_table(table, out_parquet)
+                else:
+                    with pq.ParquetWriter(out_parquet, table.schema, use_dictionary=True) as writer:
+                        writer.write_table(table)
+                total += len(sub)
+        print(f"✅ {total:,} lignes Tri-State sauvegardées dans {out_parquet}")
