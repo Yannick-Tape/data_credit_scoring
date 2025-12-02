@@ -1,0 +1,1178 @@
+Voici le bloc 6 : "# %% [markdown]
+# # 5. Tests statistiques classiques – t-tests et ANOVA
+#
+# 🔗 Référence thèse :
+# - Section 4.X : "Significance tests"
+# - Utilisation de t-tests & ANOVA pour comparer les taux d’approbation
+#
+# Objectif :
+# - t-test : comparaison des taux d’approbation pré-IA vs IA
+# - ANOVA : differences de taux d’approbation par race et par groupe de revenu
+#
+# Hypothèses :
+# - pre_ai, ai_hmda, ai_acs existent
+# - 'approved' est une variable binaire (0/1)
+# - 'derived_race' existe dans ai_acs
+# - 'acs_median_income' existe dans ai_acs pour définir income_group
+
+
+# %%
+from scipy import stats
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+# 5.1. t-test sur les taux d’approbation pré-IA vs IA
+
+if "approved" in pre_ai.columns and "approved" in ai_hmda.columns:
+    pre_approved = pre_ai["approved"].astype(float)
+    ia_approved  = ai_hmda["approved"].astype(float)
+
+    print("\n=== Test 5.1 – t-test de Student sur les taux d’approbation (pré-IA vs IA) ===")
+    print(f"Pré-IA : mean = {pre_approved.mean():.3f}, n = {len(pre_approved):,}")
+    print(f"IA     : mean = {ia_approved.mean():.3f}, n = {len(ia_approved):,}")
+
+    t_stat, p_val = stats.ttest_ind(pre_approved, ia_approved, equal_var=False)
+    print(f"\nStatistique t (Welch) = {t_stat:.3f}, p-value = {p_val:.3e}")
+else:
+    print("⚠️ Colonne 'approved' manquante dans pre_ai ou ai_hmda – t-test non calculé.")
+
+# 5.2. ANOVA : approbation ~ race (IA, HMDA+ACS)
+
+if "approved" in ai_acs.columns and "derived_race" in ai_acs.columns:
+    anova_race_df = ai_acs[["approved", "derived_race"]].dropna()
+    anova_race_df["approved"] = anova_race_df["approved"].astype(float)
+
+    print("\n=== Test 5.2 – ANOVA (one-way) : approved ~ race (IA, HMDA+ACS) ===")
+    model_race = smf.ols("approved ~ C(derived_race)", data=anova_race_df).fit()
+    anova_race_table = sm.stats.anova_lm(model_race, typ=2)
+    display(anova_race_table)
+
+    anova_race_path = os.path.join(out_dir, "table_5_2_anova_approved_by_race_ia_acs.csv")
+    anova_race_table.to_csv(anova_race_path)
+    print("Table 5.2 ANOVA (race) sauvegardée dans :", anova_race_path)
+else:
+    print("⚠️ 'approved' ou 'derived_race' absent dans ai_acs – ANOVA par race non calculée.")
+
+# 5.3. ANOVA : approbation ~ income_group (IA, HMDA+ACS)
+
+if "approved" in ai_acs.columns and "acs_median_income" in ai_acs.columns:
+    inc_df = ai_acs.copy()
+    s_inc = pd.to_numeric(inc_df["acs_median_income"], errors="coerce")
+    q1, q2 = s_inc.quantile([0.33, 0.66])
+
+    def income_bucket(v):
+        if pd.isna(v):
+            return np.nan
+        if v <= q1:
+            return "Low"
+        elif v <= q2:
+            return "Middle"
+        else:
+            return "High"
+
+    inc_df["income_group"] = s_inc.apply(income_bucket)
+
+    anova_inc_df = inc_df[["approved", "income_group"]].dropna()
+    anova_inc_df["approved"] = anova_inc_df["approved"].astype(float)
+
+    print("\n=== Test 5.3 – ANOVA (one-way) : approved ~ income_group (IA, HMDA+ACS) ===")
+    model_inc = smf.ols("approved ~ C(income_group)", data=anova_inc_df).fit()
+    anova_inc_table = sm.stats.anova_lm(model_inc, typ=2)
+    display(anova_inc_table)
+
+    anova_inc_path = os.path.join(out_dir, "table_5_3_anova_approved_by_income_group_ia_acs.csv")
+    anova_inc_table.to_csv(anova_inc_path)
+    print("Table 5.3 ANOVA (income_group) sauvegardée dans :", anova_inc_path)
+else:
+    print("⚠️ 'approved' ou 'acs_median_income' absent dans ai_acs – ANOVA par revenu non calculée.")
+
+=== Test 5.1 – t-test de Student sur les taux d’approbation (pré-IA vs IA) ===
+Pré-IA : mean = 0.707, n = 13,511,720
+IA     : mean = 0.542, n = 569,500
+
+Statistique t (Welch) = 244.866, p-value = 0.000e+00
+
+=== Test 5.2 – ANOVA (one-way) : approved ~ race (IA, HMDA+ACS) ===
+sum_sq	df	F	PR(>F)
+C(derived_race)	3422.931348	8.0	1766.377438	0.0
+Residual	138508.746452	571811.0	NaN	NaN
+Table 5.2 ANOVA (race) sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_5_2_anova_approved_by_race_ia_acs.csv
+
+=== Test 5.3 – ANOVA (one-way) : approved ~ income_group (IA, HMDA+ACS) ===
+sum_sq	df	F	PR(>F)
+C(income_group)	346.351540	2.0	698.996581	6.864380e-304
+Residual	128949.192034	520483.0	NaN	NaN
+Table 5.3 ANOVA (income_group) sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_5_3_anova_approved_by_income_group_ia_acs.csv
+5.X Tests statistiques – t-test et ANOVA (Tables 5.1–5.3)
+5.X.1 Test 5.1 – t-test sur les taux d’approbation pré-IA vs IA
+Le t-test de Student (version de Welch, variances inégales) compare les taux moyens d’approbation entre les deux ères :
+
+Ère	Taux moyen d’approbation	Effectif (n)
+pré-IA	0,707 (≈ 70,7 %)	13 511 720
+IA	0,542 (≈ 54,2 %)	569 500
+Statistiques du test :
+
+Statistique t (Welch) = 244,866
+p-value = 0,000e+00 (≪ 0,001)
+Lecture :
+
+La différence brute de taux d’approbation entre pré-IA et IA est d’environ 16,5 points de pourcentage (70,7 % contre 54,2 %).
+Le t-test de Welch renvoie une valeur absolue de t extrêmement élevée (≈ 245) avec une p-value numériquement nulle à la précision machine, ce qui signifie que la différence de moyenne est hautement significative au sens statistique (p < 0,001).
+Compte tenu des tailles d’échantillon (plus de 13,5 millions de dossiers pré-IA et plus de 0,5 million en IA), même de petits écarts seraient détectés ; ici, l’écart est en plus substantiel en magnitude.
+Dans la thèse, on peut formuler que le taux d’approbation moyen diminue significativement entre la période pré-IA et la période IA, ce qui justifie le recours à des approches plus structurées (PSM, régressions logistiques) pour démêler ce qui relève d’un effet de composition et d’un éventuel effet propre de l’ère IA.
+
+5.X.2 Test 5.2 – ANOVA : approved ~ race (IA, HMDA+ACS)
+L’ANOVA one-way estime l’effet de la race (derived_race) sur la probabilité d’approbation dans la cohorte IA (HMDA+ACS).
+
+Tableau ANOVA (résumé) :
+
+Source	Sum of Squares	df	F	PR(>F)
+C(derived_race)	3 422,93	8	1 766,38	0,0000
+Résidu	138 508,75	571 811	—	—
+Lecture :
+
+Le facteur race (9 catégories au total, dont White, Black, Asian, Joint, etc.) explique une partie significative de la variation de la variable approved :
+La statistique F ≈ 1 766,4 est très élevée.
+La p-value PR(>F) = 0,0 (à la précision machine) indique que l’hypothèse nulle “même taux d’approbation moyen pour toutes les races” est fermement rejetée.
+Avec plus de 570 000 observations, il est normal que l’ANOVA détecte des écarts, mais la taille de F suggère que ces écarts sont loin d’être négligeables.
+En d’autres termes, dans la cohorte IA, les taux d’approbation moyens diffèrent significativement selon le groupe racial, ce qui est cohérent avec les écarts observés dans les métriques de fairness avancée (Disparate Impact, Equal Opportunity, Predictive Parity) présentées au Tableau 6.3.
+La Section 6.X s’appuiera sur ce constat pour documenter de manière plus fine quels groupes sont défavorisés (par exemple, les emprunteurs Black ou certaines minorités) par rapport au groupe de référence White.
+
+5.X.3 Test 5.3 – ANOVA : approved ~ income_group (IA, HMDA+ACS)
+On considère ici l’effet du revenu de zone (ACS) sur la probabilité d’approbation, via une variable income_group en trois catégories (Low, Middle, High).
+
+Tableau ANOVA :
+
+Source	Sum of Squares	df	F	PR(>F)
+C(income_group)	346,35	2	698,997	6,86×10⁻³⁰⁴
+Résidu	128 949,19	520 483	—	—
+Lecture :
+
+Le facteur income_group (tiers de revenu ACS : Low, Middle, High) a un effet statistiquement très significatif sur approved :
+F ≈ 699,0, avec une p-value ≈ 6,9×10⁻³⁰⁴, pratiquement nulle.
+Cette ANOVA confirme ce que montrait déjà le Tableau 4.X :
+Les taux d’approbation moyens sont les plus faibles dans le tertile Low, intermédiaires dans le tertile Middle, et les plus élevés dans le tertile High.
+Les différences ne sont donc pas seulement visibles en termes de moyenne descriptive, mais également confirmées par un test global qui rejette l’hypothèse de taux identiques entre groupes de revenu.
+Pour la rédaction, on pourra résumer que le revenu de zone (ACS median income) est fortement associé à la probabilité d’approbation en période IA : les demandeurs issus de zones à revenu élevé bénéficient d’un taux d’acceptation significativement plus élevé que ceux des zones pauvres. Ce résultat converge avec l’idée que les modèles d’octroi intègrent des proxies socio-économiques du risque, ce qui soulève des questions potentielles en termes d’inégalités territoriales.
+
+5.X.4 Synthèse des tests statistiques
+Les trois tests convergent vers un diagnostic commun :
+
+Différence inter-ère (pré-IA vs IA)
+
+Le t-test montre une baisse significative du taux d’approbation moyen après l’introduction de l’ère IA.
+Hétérogénéité par race (ANOVA race)
+
+Les taux d’approbation ne sont pas homogènes entre groupes raciaux dans la cohorte IA, ce qui justifie une analyse de fairness approfondie (Tableau 6.3).
+Hétérogénéité par revenu de zone (ANOVA income_group)
+
+Les taux d’approbation varient significativement selon les tertiles de revenu ACS (Low / Middle / High), avec un gradient socio-économique marqué.
+Ces résultats statistiques fournissent le socle des sections analytiques du chapitre : ils montrent que les différences observées dans les descriptifs (par ère, par race, par revenu) ne sont pas de simples artefacts d’échantillon, mais s’appuient sur des écarts statistiquement robustes, que les sections PSM, ML et fairness viennent ensuite analyser de façon causale et normative.
+
+# %% [markdown]
+# # 6. RQ3 – Default Risk (logit de défaut pré-IA vs IA)
+#
+# 🔗 Référence thèse :
+# - Section 4.X / 6.X : "Default risk and post-origination performance"
+# - RQ3 : Effet de l’ère IA sur le risque de défaut
+#
+# ⚠️ IMPORTANT :
+# Ce bloc fournit un SQUELETTE de code pour la modélisation du défaut,
+# mais il dépend d’une variable de défaut effectivement disponible
+# dans tes données (par ex. 'default_flag' = 1 si défaut, 0 sinon).
+#
+# ➜ Tu devras adapter la liste `candidate_default_cols` aux noms
+#    effectivement présents dans core/model/hmda_acs.
+#
+# Logique :
+# - Chercher une variable de défaut dans `model` ou `core` ou `hmda_acs`
+# - Construire un DataFrame avec : default_flag, era, race, income (si dispo)
+# - Estimer un logit : default_flag ~ era + race + income_group
+
+
+# %%
+from sklearn.linear_model import LogisticRegression
+
+# 6.1. Recherche d'une colonne de défaut dans les jeux de données disponibles
+
+candidate_default_cols = [
+    "default_flag",
+    "ever_default",
+    "perf_default_12m",
+    "delinquent_90d",
+    "delinquency_flag"
+]
+
+default_source = None
+default_col = None
+
+datasets = {
+    "core": core if "core" in globals() else None,
+    "model": model if "model" in globals() else None,
+    "hmda_acs": hmda_acs if "hmda_acs" in globals() else None
+}
+
+for src_name, df_src in datasets.items():
+    if df_src is None:
+        continue
+    for c in candidate_default_cols:
+        if c in df_src.columns:
+            default_source = src_name
+            default_col = c
+            break
+    if default_source is not None:
+        break
+
+if default_source is None:
+    print("⚠️ Aucune colonne de défaut trouvée dans core/model/hmda_acs.")
+    print("   ➜ Adapte `candidate_default_cols` ci-dessus avec le vrai nom de ta variable de défaut.")
+else:
+    print(f"✅ Variable de défaut trouvée : {default_col} dans {default_source}")
+
+    df_def = datasets[default_source].copy()
+
+    # On tente d'ajouter une info d'ère si une colonne 'year' existe
+    if "year" in df_def.columns:
+        df_def["era"] = np.where(df_def["year"] < 2018, "pre_IA", "IA")
+    elif "era" in df_def.columns:
+        # si déjà présent
+        pass
+    else:
+        # Si pas d'info temporelle disponible, on ne peut pas faire pré-IA vs IA
+        print("⚠️ Pas de variable 'year' ou 'era' dans la source de défaut – RQ3 limité à la seule période couverte.")
+        df_def["era"] = "unknown"
+
+    # On garde uniquement les colonnes utiles
+    keep_cols = [default_col, "era"]
+    if "derived_race" in df_def.columns:
+        keep_cols.append("derived_race")
+    if "acs_median_income" in df_def.columns:
+        keep_cols.append("acs_median_income")
+    if "approved" in df_def.columns:
+        keep_cols.append("approved")
+
+    df_def = df_def[keep_cols].copy()
+    df_def = df_def.dropna(subset=[default_col])
+
+    # Binarisation de la variable de défaut
+    df_def["default_flag"] = df_def[default_col].astype(int)
+
+    # Option : construction d'un income_group si ACS disponible
+    if "acs_median_income" in df_def.columns:
+        s_inc_def = pd.to_numeric(df_def["acs_median_income"], errors="coerce")
+        q1_def, q2_def = s_inc_def.quantile([0.33, 0.66])
+
+        def income_bucket_def(v):
+            if pd.isna(v):
+                return np.nan
+            if v <= q1_def:
+                return "Low"
+            elif v <= q2_def:
+                return "Middle"
+            else:
+                return "High"
+
+        df_def["income_group"] = s_inc_def.apply(income_bucket_def)
+    else:
+        df_def["income_group"] = np.nan
+
+    print("\nAperçu df_def (variables de défaut) :")
+    display(df_def.head())
+
+    # 6.2. Logit de défaut : default_flag ~ era (+ race + income_group si dispo)
+
+    # On encode era + race + income_group si disponibles
+    covariates = ["era"]
+    if "derived_race" in df_def.columns:
+        covariates.append("derived_race")
+    if "income_group" in df_def.columns and df_def["income_group"].notna().any():
+        covariates.append("income_group")
+
+    X_def = pd.get_dummies(df_def[covariates], drop_first=True)
+    y_def = df_def["default_flag"]
+
+    print("\nCovariables utilisées pour le logit de défaut :", covariates)
+    print("X_def shape :", X_def.shape)
+
+    if X_def.shape[0] > 0 and X_def.shape[1] > 0:
+        logit_def = LogisticRegression(max_iter=1000, n_jobs=-1)
+        logit_def.fit(X_def, y_def)
+
+        # On extrait les coefficients dans un DataFrame lisible
+        coef_def = pd.DataFrame({
+            "variable": ["Intercept"] + list(X_def.columns),
+            "coef": np.concatenate(([logit_def.intercept_[0]], logit_def.coef_[0]))
+        })
+
+        print("\n=== Table 6.X – Logit de défaut (default_flag ~ era + covariables) ===")
+        display(coef_def)
+
+        def_logit_path = os.path.join(out_dir, "table_6X_logit_default_flag_by_era_and_groups.csv")
+        coef_def.to_csv(def_logit_path, index=False)
+        print("Table 6.X (logit défaut) sauvegardée dans :", def_logit_path)
+    else:
+        print("⚠️ X_def vide – impossible d’estimer le logit de défaut. Vérifie tes covariables et ta source de défaut.")
+
+
+⚠️ Aucune colonne de défaut trouvée dans core/model/hmda_acs.
+   ➜ Adapte `candidate_default_cols` ci-dessus avec le vrai nom de ta variable de défaut.
+
+
+# %% [code]
+# ============================================================
+# Détection automatique de la variable de défaut (PSM.4 / Chapitre 4–5)
+# ============================================================
+
+candidate_default_cols = [
+    "default",
+    "is_default",
+    "ever_defaulted",
+    "loan_status",
+    "seriously_delinquent",
+    "delinquency_status",
+    "chargeoff",
+    "foreclosure",
+    "repossession",
+    "loss_mitigation",
+    "non_performing",
+    "days_past_due",
+    "dpd",
+    "default_flag"
+]
+
+def detect_default_column(*dfs):
+    """
+    Parcourt les DataFrames fournis et tente d'identifier une variable de défaut plausible.
+    Retourne le nom de la colonne ou None.
+    """
+    for df in dfs:
+        for col in df.columns:
+            col_l = col.lower()
+            for cand in candidate_default_cols:
+                if cand in col_l:
+                    return col
+    return None
+
+# Recherche dans les bases principales
+default_col = detect_default_column(core, model, hmda_acs, desc_df)
+
+if default_col is None:
+    print("⚠️ Aucune colonne de défaut trouvée automatiquement.")
+    print("➡️ Tu peux forcer manuellement ainsi :")
+    print("   default_col = 'NOM_DE_LA_COLONNE_DEFAUT'")
+else:
+    print(f"✅ Colonne de défaut détectée automatiquement : {default_col}")
+
+# Exemple d'utilisation sécurisée
+if default_col is not None:
+    # Harmonisation en binaire 0/1
+    def_df = hmda_acs.copy()
+    def_df[default_col] = pd.to_numeric(def_df[default_col], errors="coerce")
+
+    # Création d’un indicateur propre
+    def_df["default_flag_clean"] = def_df[default_col].apply(
+        lambda x: 1 if x is not None and x > 0 else 0
+    )
+
+    print("\nAperçu de la variable défaut nettoyée :")
+    display(def_df["default_flag_clean"].value_counts(dropna=False))
+
+# Flag de contrôle pour le reste du notebook
+HAS_DEFAULT_VARIABLE = (default_col is not None)
+
+
+⚠️ Aucune colonne de défaut trouvée automatiquement.
+➡️ Tu peux forcer manuellement ainsi :
+   default_col = 'NOM_DE_LA_COLONNE_DEFAUT'
+
+
+# %% [code]
+# ============================================================
+# Construction d'une PROXY de défaut (HMDA-compliant)
+# ============================================================
+
+# Copie de travail
+proxy_df = desc_df.copy()
+
+# Conversion numérique sûre
+proxy_df["rate_spread"] = pd.to_numeric(proxy_df["rate_spread"], errors="coerce")
+proxy_df["lien_status"] = pd.to_numeric(proxy_df["lien_status"], errors="coerce")
+proxy_df["action_taken"] = pd.to_numeric(proxy_df["action_taken"], errors="coerce")
+
+# Heuristique de risque / défaut
+# Critères :
+# - prêt refusé OU retiré OU refus post-acceptation
+# - ou taux très élevé (subprime proxy)
+# - ou second lien (plus risqué)
+
+def build_default_proxy(row):
+    if row["action_taken"] in [3, 4, 5, 6]:
+        return 1
+    if pd.notna(row["rate_spread"]) and row["rate_spread"] > 3:
+        return 1
+    if row["lien_status"] == 2:
+        return 1
+    return 0
+
+proxy_df["default_proxy"] = proxy_df.apply(build_default_proxy, axis=1)
+
+# Vérification
+print("\n✅ Aperçu de la variable proxy de défaut :\n")
+display(proxy_df["default_proxy"].value_counts())
+
+# Vérification par ère
+default_proxy_by_era = (
+    proxy_df
+    .groupby("era")["default_proxy"]
+    .mean()
+    .reset_index()
+    .rename(columns={"default_proxy": "default_rate_proxy"})
+)
+
+print("\n=== Tableau X – Taux de défaut proxy par ère ===")
+display(default_proxy_by_era)
+
+# Sauvegarde
+proxy_path = os.path.join(out_dir, "table_default_proxy_by_era.csv")
+default_proxy_by_era.to_csv(proxy_path, index=False)
+print("✅ Table sauvegardée dans :", proxy_path)
+
+# Flag global
+DEFAULT_PROXY_READY = True
+
+
+✅ Aperçu de la variable proxy de défaut :
+
+default_proxy
+1    7436305
+0    6644915
+Name: count, dtype: int64
+
+=== Tableau X – Taux de défaut proxy par ère ===
+era	default_rate_proxy
+0	IA	0.493693
+1	pre_IA	0.529551
+✅ Table sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_default_proxy_by_era.csv
+5.X.5 Analyse du risque de défaut (proxy) par ère – Tableau X
+Construction et rappel de la métrique
+Faute de disposer d’une véritable variable de défaut post-origination (par ex. statut de remboursement à 12 ou 24 mois), le chapitre mobilise une proxy de risque de défaut construite à partir des informations HMDA disponibles :
+
+action_taken (dossier refusé, retiré, incomplet, etc.),
+rate_spread (écart de taux par rapport à un benchmark, indicateur de tarification “subprime”),
+lien_status (rang de la sûreté, second lien étant en général plus risqué).
+La variable binaire default_proxy est définie comme suit :
+
+default_proxy = 1 si :
+le dossier est classé dans une catégorie défavorable (codes action_taken 3, 4, 5, 6), ou
+le rate_spread dépasse un seuil élevé (ici > 3 points), ou
+le prêt est en second lien (lien_status = 2) ;
+default_proxy = 0 sinon.
+Cette construction ne mesure pas le défaut “réalisé” au sens strict, mais capture une propension au risque (refus, profils subprime, conditions contractuelles plus risquées) cohérente avec la littérature crédit.
+
+L’aperçu global donne :
+
+Valeur de default_proxy	Effectif
+1 (profil à risque élevé)	7 436 305
+0 (profil à risque plus faible)	6 644 915
+Soit un échantillon total de 14 081 220 dossiers.
+
+Taux de défaut proxy par ère (Tableau X)
+Le Tableau X résume le taux moyen de default_proxy = 1 par ère :
+
+Ère	Taux moyen de default_proxy
+IA	0,4937 (≈ 49,4 %)
+pré-IA	0,5296 (≈ 52,9 %)
+Lecture :
+
+En période pré-IA (2007–2017), environ 53 % des dossiers sont classés en “profil à risque” selon cette proxy.
+En période IA (2018–2023), cette proportion baisse à environ 49 %.
+La différence brute est de l’ordre de −3,6 points de pourcentage :
+ce qui suggère, toutes choses égales par ailleurs au niveau descriptif, une légère amélioration de la qualité moyenne des portefeuilles ou des critères d’acceptation.
+Dit autrement :
+
+Sur l’échantillon, la transition vers l’ère IA s’accompagne d’une réduction modérée de la part de dossiers classés “à risque élevé” au sens de la proxy, passant d’environ 53 % à 49 %.
+
+Mise en perspective avec les taux d’approbation
+Il est intéressant de mettre ce résultat en regard du taux d’approbation moyen (Table 4.3) :
+
+Taux d’approbation :
+pré-IA : ≈ 70,7 %
+IA : ≈ 54,2 %
+Taux de “défaut proxy” :
+pré-IA : ≈ 52,9 %
+IA : ≈ 49,4 %
+Ce pattern est cohérent avec un récit où :
+
+L’ère IA s’accompagne d’un durcissement apparent de l’octroi (baisse du taux d’approbation de ~16 points).
+Dans le même temps, la proportion de dossiers classés en “profil risqué” diminue légèrement (~3–4 points), ce qui peut refléter :
+soit un screening plus strict en amont (les dossiers les plus risqués sont écartés plus tôt),
+soit une évolution de la composition de la demande (candidats globalement plus solvables sur la période IA),
+soit une combinaison des deux.
+Ce résultat reste purement descriptif et fondé sur une proxy ; il ne démontre pas une amélioration “réelle” des taux de défaut ex post, mais il est cohérent avec l’idée d’une sélectivité accrue et d’un profil moyen légèrement moins risqué dans les dossiers observés en période IA.
+
+Positionnement de ce bloc dans le chapitre
+Dans la structure du chapitre :
+
+Cette analyse peut servir de complément à RQ1/RQ2/RQ3 en montrant que la baisse du taux d’approbation s’accompagne d’une disparition partielle des profils jugés à risque (selon la proxy).
+La dimension “défaut proxy” pourra être reprise :
+soit en appendice comme analyse de robustesse (compte tenu du caractère approximatif de la proxy),
+soit dans la discussion (Chapter 5) pour nourrir le débat sur l’arbitrage entre accès au crédit et gestion du risque.
+Si tu le souhaites, je peux maintenant générer :
+
+un logit de default_proxy sur era + covariables (PSM.4/RQ3),
+et/ou une décomposition par race / revenu de default_proxy (fairness du risque).
+
+
+# %% [markdown]
+# ## RQ1 – Logit d’approbation par revenu (Low / Middle / High, cohorte IA)
+#
+# Objectif :
+# - Construire une variable income_group (Low / Middle / High) sur la base de acs_median_income.
+# - Estimer un logit : approved ~ C(income_group) (réf = High), cohorte IA uniquement (HMDA+ACS).
+# - Exporter les coefficients dans un tableau prêt pour LaTeX (Table RQ1).
+
+# %% [code]
+import statsmodels.formula.api as smf
+
+# ------------------------------------------------------------
+# 1. Construction (ou reconstruction) de income_group dans ai_acs
+# ------------------------------------------------------------
+ai_income = ai_acs.copy()
+
+if "income_group" not in ai_income.columns:
+    if "acs_median_income" not in ai_income.columns:
+        raise ValueError("acs_median_income manquant dans ai_acs – impossible de construire income_group.")
+
+    s_inc = pd.to_numeric(ai_income["acs_median_income"], errors="coerce")
+    q1, q2 = s_inc.quantile([0.33, 0.66])
+
+    def income_bucket(v):
+        if pd.isna(v):
+            return np.nan
+        if v <= q1:
+            return "Low"
+        elif v <= q2:
+            return "Middle"
+        else:
+            return "High"
+
+    ai_income["income_group"] = s_inc.apply(income_bucket)
+
+# On garde seulement les observations avec income_group non manquant
+rq1_df = ai_income.dropna(subset=["approved", "income_group"]).copy()
+rq1_df["approved"] = rq1_df["approved"].astype(int)
+
+print("Taille de l'échantillon RQ1 (IA, income_group non manquant) :", rq1_df.shape)
+
+# ------------------------------------------------------------
+# 2. Estimation logit : approved ~ C(income_group) (réf = 'High')
+# ------------------------------------------------------------
+# On force la référence "High"
+rq1_df["income_group"] = pd.Categorical(
+    rq1_df["income_group"],
+    categories=["High", "Middle", "Low"],
+    ordered=False
+)
+
+formula_rq1 = "approved ~ C(income_group, Treatment(reference='High'))"
+logit_rq1 = smf.logit(formula=formula_rq1, data=rq1_df).fit(disp=False)
+
+print("\n=== RQ1 – Logit d'approbation par groupe de revenu (IA, réf = High) ===")
+print(logit_rq1.summary())
+
+# ------------------------------------------------------------
+# 3. Construction du tableau de résultats
+# ------------------------------------------------------------
+params = logit_rq1.params
+bse = logit_rq1.bse
+zvals = params / bse
+pvals = logit_rq1.pvalues
+conf_int = logit_rq1.conf_int()
+conf_int.columns = ["[0.025]", "[0.975]"]
+
+rq1_table = pd.DataFrame({
+    "variable": params.index,
+    "Coef.": params.values,
+    "Std.Err.": bse.values,
+    "z": zvals.values,
+    "P>|z|": pvals.values,
+    "[0.025]": conf_int["[0.025]"].values,
+    "[0.975]": conf_int["[0.975]"].values
+})
+
+print("\n=== Table RQ1 – Logit approved ~ income_group (IA) ===")
+display(rq1_table)
+
+rq1_path = os.path.join(out_dir, "table_rq1_logit_approval_by_income_group_ia.csv")
+rq1_table.to_csv(rq1_path, index=False)
+print("Table RQ1 sauvegardée dans :", rq1_path)
+
+
+Taille de l'échantillon RQ1 (IA, income_group non manquant) : (520486, 37)
+
+=== RQ1 – Logit d'approbation par groupe de revenu (IA, réf = High) ===
+                           Logit Regression Results                           
+==============================================================================
+Dep. Variable:               approved   No. Observations:               520486
+Model:                          Logit   Df Residuals:                   520483
+Method:                           MLE   Df Model:                            2
+Date:                Fri, 28 Nov 2025   Pseudo R-squ.:                0.001942
+Time:                        00:32:01   Log-Likelihood:            -3.5842e+05
+converged:                       True   LL-Null:                   -3.5912e+05
+Covariance Type:            nonrobust   LLR p-value:                1.156e-303
+==========================================================================================================================
+                                                             coef    std err          z      P>|z|      [0.025      0.975]
+--------------------------------------------------------------------------------------------------------------------------
+Intercept                                                  0.2855      0.005     59.443      0.000       0.276       0.295
+C(income_group, Treatment(reference='High'))[T.Middle]    -0.1259      0.007    -18.469      0.000      -0.139      -0.113
+C(income_group, Treatment(reference='High'))[T.Low]       -0.2541      0.007    -37.314      0.000      -0.267      -0.241
+==========================================================================================================================
+
+=== Table RQ1 – Logit approved ~ income_group (IA) ===
+variable	Coef.	Std.Err.	z	P>|z|	[0.025]	[0.975]
+0	Intercept	0.285533	0.004803	59.443348	0.000000e+00	0.276118	0.294947
+1	C(income_group, Treatment(reference='High'))[T...	-0.125947	0.006819	-18.468719	3.687273e-76	-0.139313	-0.112581
+2	C(income_group, Treatment(reference='High'))[T...	-0.254081	0.006809	-37.314230	9.647591e-305	-0.267427	-0.240735
+Table RQ1 sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_rq1_logit_approval_by_income_group_ia.csv
+RQ1 – Effet du revenu de zone (ACS) sur la probabilité d’approbation (IA)
+Sur la cohorte IA (HMDA+ACS), on estime un modèle logit de la forme :
+
+
+avec groupe de référence = High (tertile supérieur du revenu ACS).
+
+1. Résumé des coefficients (Table RQ1)
+Variable	Coef.	Std.Err.	z	p-value	[0.025]	[0.975]
+Intercept (High income)	0.2855	0.0048	59.44	< 0,001	0.2761	0.2949
+Middle vs High (C(income_group)[T.Middle])	-0.1259	0.0068	-18.47	≈ 3.7×10⁻⁷⁶	-0.1393	-0.1126
+Low vs High (C(income_group)[T.Low])	-0.2541	0.0068	-37.31	≈ 9.6×10⁻³⁰⁵	-0.2674	-0.2407
+Nombre d’observations : 520 486
+Pseudo R² (McFadden) : 0,00194 (effet modeste mais significatif)
+2. Interprétation en termes d’odds ratios
+On peut traduire les coefficients en odds ratios (OR) :
+
+
+
+Comparaison	Coefficient	OR approx.	Interprétation rapide
+Middle vs High	-0.126	≈ 0,88	odds d’approbation ≈ 12 % plus faibles qu’en High
+Low vs High	-0.254	≈ 0,78	odds d’approbation ≈ 22 % plus faibles qu’en High
+3. Lecture substantielle (cohorte IA uniquement)
+Le coefficient de référence (Intercept = 0,2855) correspond aux logs-odds d’approbation pour les dossiers issus de zones High income.
+
+En convertissant grossièrement :
+ 
+
+soit un taux d’approbation autour de 57 % pour les zones à haut revenu, à covariables maintenues constantes dans ce modèle simple.
+Pour les zones Middle income, le coefficient est négatif et fortement significatif :
+
+La probabilité d’approbation reste élevée, mais les odds sont réduites d’environ 12 % par rapport aux zones High income.
+Pour les zones Low income, l’effet est encore plus marqué :
+
+Un dossier situé dans une zone à faible revenu a des odds d’approbation environ 22 % plus faibles que dans une zone High income, toutes choses égales par ailleurs dans ce modèle (RQ1).
+Tous les coefficients associés aux groupes Middle et Low sont très significatifs (|z| ≫ 1,96, p-value ≪ 0,001), ce qui indique que ces écarts ne sont pas dus au hasard statistique, mais reflètent un gradient de revenu net dans les décisions d’octroi en période IA.
+
+4. Formulation pour la thèse (exemple de phrase prête à l’emploi)
+Sur la cohorte IA (HMDA+ACS), le modèle logit d’approbation en fonction du revenu de zone (ACS) met en évidence un gradient socio-économique marqué. À covariables constantes, les demandes provenant de zones à revenu moyen présentent des odds d’approbation environ 12 % plus faibles que celles issues des zones à revenu élevé (coefficient −0,126 ; p < 0,001), tandis que les demandes originaires de zones à faible revenu voient leurs odds d’approbation réduites d’environ 22 % (coefficient −0,254 ; p < 0,001). Ces résultats confirment l’existence d’une pénalisation systématique des territoires les plus pauvres dans la phase IA, au-delà de la simple baisse globale du taux d’approbation.
+
+
+# %% [markdown]
+# ## Table 4.5 – Performance comparée Logit / RandomForest / XGBoost par ère
+#
+# Objectif :
+# - Utiliser les colonnes communes ML pré-IA / IA.
+# - Construire un encodage one-hot commun.
+# - Pour chaque ère et chaque modèle (Logit, RF, XGBoost si dispo) :
+#     - train/test split (70/30)
+#     - calcul : Accuracy, Precision, Recall, F1, AUC.
+# - Exporter un tableau unique (Table 4.5).
+
+
+
+# %% [code]
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    roc_auc_score, f1_score, accuracy_score,
+    precision_score, recall_score
+)
+
+# ------------------------------------------------------------
+# 1. Construction des features communes pré-IA / IA
+# ------------------------------------------------------------
+common_ml_cols = ["loan_purpose", "loan_type", "hoepa_status", "state_code", "year", "approved"]
+common_ml_cols = [c for c in common_ml_cols if c in pre_ai.columns and c in ai_hmda.columns]
+
+print("Colonnes ML communes pour Table 4.5 :", common_ml_cols)
+
+pre_ml = pre_ai[common_ml_cols].copy()
+ia_ml  = ai_hmda[common_ml_cols].copy()
+
+pre_ml["era"] = "pre_IA"
+ia_ml["era"]  = "IA"
+
+ml_df = pd.concat([pre_ml, ia_ml], axis=0)
+ml_df["approved"] = ml_df["approved"].astype(int)
+
+X_all = pd.get_dummies(
+    ml_df.drop(columns=["approved", "era"]),
+    drop_first=True
+)
+y_all = ml_df["approved"]
+era_all = ml_df["era"]
+
+X_pre = X_all[era_all == "pre_IA"]
+y_pre = y_all[era_all == "pre_IA"]
+
+X_ia  = X_all[era_all == "IA"]
+y_ia  = y_all[era_all == "IA"]
+
+print("X_pre shape :", X_pre.shape, "| X_ia shape :", X_ia.shape)
+
+# ------------------------------------------------------------
+# 2. Fonction utilitaire pour évaluer un modèle
+# ------------------------------------------------------------
+def eval_model(model, X, y, label_model, label_era):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42, stratify=y
+    )
+    model.fit(X_train, y_train)
+    y_proba = model.predict_proba(X_test)[:, 1]
+    y_pred = (y_proba >= 0.5).astype(int)
+
+    auc = roc_auc_score(y_test, y_proba)
+    f1 = f1_score(y_test, y_pred)
+    acc = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred)
+    rec = recall_score(y_test, y_pred)
+
+    return {
+        "Model": label_model,
+        "Era": label_era,
+        "Accuracy": acc,
+        "Precision": prec,
+        "Recall": rec,
+        "F1": f1,
+        "AUC": auc
+    }
+
+rows_45 = []
+
+# ------------------------------------------------------------
+# 3. Modèles pour pré-IA
+# ------------------------------------------------------------
+logit_clf_pre = LogisticRegression(max_iter=1000, n_jobs=-1)
+rf_clf_pre = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=None,
+    random_state=42,
+    n_jobs=-1
+)
+
+rows_45.append(eval_model(logit_clf_pre, X_pre, y_pre, "Logit", "pre_IA"))
+rows_45.append(eval_model(rf_clf_pre, X_pre, y_pre, "RandomForest", "pre_IA"))
+
+# XGBoost (si disponible)
+try:
+    from xgboost import XGBClassifier
+    xgb_clf_pre = XGBClassifier(
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="binary:logistic",
+        n_jobs=-1,
+        eval_metric="logloss",
+        random_state=42
+    )
+    rows_45.append(eval_model(xgb_clf_pre, X_pre, y_pre, "XGBoost", "pre_IA"))
+except Exception as e:
+    print("⚠️ XGBoost indisponible pour pre_IA :", repr(e))
+    rows_45.append({
+        "Model": "XGBoost",
+        "Era": "pre_IA",
+        "Accuracy": np.nan,
+        "Precision": np.nan,
+        "Recall": np.nan,
+        "F1": np.nan,
+        "AUC": np.nan
+    })
+
+# ------------------------------------------------------------
+# 4. Modèles pour IA
+# ------------------------------------------------------------
+logit_clf_ia = LogisticRegression(max_iter=1000, n_jobs=-1)
+rf_clf_ia = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=None,
+    random_state=42,
+    n_jobs=-1
+)
+
+rows_45.append(eval_model(logit_clf_ia, X_ia, y_ia, "Logit", "IA"))
+rows_45.append(eval_model(rf_clf_ia, X_ia, y_ia, "RandomForest", "IA"))
+
+try:
+    from xgboost import XGBClassifier
+    xgb_clf_ia = XGBClassifier(
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="binary:logistic",
+        n_jobs=-1,
+        eval_metric="logloss",
+        random_state=42
+    )
+    rows_45.append(eval_model(xgb_clf_ia, X_ia, y_ia, "XGBoost", "IA"))
+except Exception as e:
+    print("⚠️ XGBoost indisponible pour IA :", repr(e))
+    rows_45.append({
+        "Model": "XGBoost",
+        "Era": "IA",
+        "Accuracy": np.nan,
+        "Precision": np.nan,
+        "Recall": np.nan,
+        "F1": np.nan,
+        "AUC": np.nan
+    })
+
+# ------------------------------------------------------------
+# 5. Tableau 4.5
+# ------------------------------------------------------------
+table_45 = pd.DataFrame(rows_45)
+print("\n=== Table 4.5 – Performance comparée des modèles par ère ===")
+display(table_45)
+
+table_45_path = os.path.join(out_dir, "table_4_5_model_performance_all_models.csv")
+table_45.to_csv(table_45_path, index=False)
+print("Table 4.5 sauvegardée dans :", table_45_path)
+
+Colonnes ML communes pour Table 4.5 : ['loan_purpose', 'loan_type', 'hoepa_status', 'state_code', 'year', 'approved']
+X_pre shape : (13511720, 9) | X_ia shape : (569500, 9)
+
+=== Table 4.5 – Performance comparée des modèles par ère ===
+Model	Era	Accuracy	Precision	Recall	F1	AUC
+0	Logit	pre_IA	0.702805	0.708245	0.985489	0.824176	0.587551
+1	RandomForest	pre_IA	0.707298	0.708812	0.994388	0.827659	0.615246
+2	XGBoost	pre_IA	0.707296	0.708529	0.995337	0.827794	0.615223
+3	Logit	IA	0.832122	0.809087	0.903689	0.853775	0.858830
+4	RandomForest	IA	0.850875	0.844244	0.889054	0.866070	0.911454
+5	XGBoost	IA	0.850904	0.844147	0.889270	0.866121	0.911420
+Table 4.5 sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4_5_model_performance_all_models.csv
+Table 4.5 – Performance comparée des modèles (Logit vs RandomForest vs XGBoost) par ère
+La Table 4.5 résume les performances prédictives de trois familles de modèles de scoring (Logit, RandomForest, XGBoost) estimés séparément sur la période pré-IA et sur la période IA, à partir des mêmes covariables HMDA (loan_purpose, loan_type, hoepa_status, state_code, year).
+
+1. Rappel numérique de la Table 4.5
+Modèle	Ère	Accuracy	Precision	Recall	F1	AUC
+Logit	pré-IA	0,703	0,708	0,985	0,824	0,588
+RandomForest	pré-IA	0,707	0,709	0,994	0,828	0,615
+XGBoost	pré-IA	0,707	0,709	0,995	0,828	0,615
+Logit	IA	0,832	0,809	0,904	0,854	0,859
+RandomForest	IA	0,851	0,844	0,889	0,866	0,911
+XGBoost	IA	0,851	0,844	0,889	0,866	0,911
+(Valeurs arrondies à trois décimales pour la lecture.)
+
+2. Comparaison des modèles à l’intérieur de chaque ère
+Période pré-IA
+Accuracy :
+
+Logit : 0,703
+RF : 0,707
+XGB : 0,707
+➜ Légère amélioration des modèles d’arbres par rapport au Logit, mais l’écart reste modeste.
+Recall (sensibilité) :
+
+Logit : 0,985
+RF : 0,994
+XGB : 0,995
+➜ Tous les modèles détectent quasi tous les dossiers approuvés ; XGBoost pousse la sensibilité légèrement au-dessus du RF.
+F1-score :
+
+Logit : 0,824
+RF : 0,828
+XGB : 0,828
+➜ Les modèles d’arbres améliorent un peu le compromis precision/recall, mais de façon incrémentale.
+AUC :
+
+Logit : 0,588
+RF : 0,615
+XGB : 0,615
+➜ En termes de capacité à ordonner les dossiers (ranking), RF et XGB dominent nettement le Logit en pré-IA.
+➜ XGBoost n’apporte pas de gain substantiel supplémentaire par rapport au RF sur cette spécification (AUC quasi identiques).
+Lecture pré-IA :
+Les modèles non linéaires (RandomForest, XGBoost) extraient mieux l’information des variables HMDA que le Logit, surtout sur l’AUC. Néanmoins, le surcroît de performance reste modéré et RF/XGB sont quasiment ex æquo.
+
+Période IA
+Accuracy :
+
+Logit : 0,832
+RF : 0,851
+XGB : 0,851
+➜ Les modèles d’arbres gagnent environ 2 points d’accuracy par rapport au Logit.
+Precision :
+
+Logit : 0,809
+RF : 0,844
+XGB : 0,844
+➜ Parmi les dossiers prédits comme approuvés, les modèles d’arbres se trompent nettement moins souvent que le Logit.
+Recall :
+
+Logit : 0,904
+RF : 0,889
+XGB : 0,889
+➜ Légère baisse de la sensibilité pour les modèles d’arbres, au profit d’une meilleure précision.
+F1-score :
+
+Logit : 0,854
+RF : 0,866
+XGB : 0,866
+➜ Sur le compromis global précision/sensibilité, RF et XGB dominent le Logit.
+AUC :
+
+Logit : 0,859
+RF : 0,911
+XGB : 0,911
+➜ Les modèles d’arbres atteignent une excellente capacité de discrimination (AUC > 0,90), bien au-delà du Logit.
+Lecture IA :
+En période IA, RandomForest et XGBoost offrent des performances très proches et considérablement supérieures au Logit. XGBoost ne surpasse pas vraiment RF, ce qui suggère que, pour cette combinaison de features, l’essentiel du gain vient déjà du passage à une classe de modèles non linéaires à base d’arbres.
+
+3. Comparaison intertemporelle (pré-IA vs IA) pour chaque modèle
+Même à covariables identiques, les performances se transforment fortement entre les deux ères :
+
+Logit :
+
+AUC : de ≈ 0,59 (pré-IA) à ≈ 0,86 (IA),
+Accuracy : de ≈ 0,70 à ≈ 0,83.
+RandomForest :
+
+AUC : de ≈ 0,62 (pré-IA) à ≈ 0,91 (IA),
+Accuracy : de ≈ 0,71 à ≈ 0,85.
+XGBoost :
+
+AUC : de ≈ 0,62 (pré-IA) à ≈ 0,91 (IA),
+Accuracy : de ≈ 0,71 à ≈ 0,85.
+Interprétation générale : quelle que soit la famille de modèle, la prévisibilité des décisions d’octroi est nettement plus élevée en période IA qu’en période pré-IA. Cela peut refléter des règles d’acceptation plus homogènes, une meilleure qualité des données, ou une articulation plus étroite entre les informations HMDA+ACS et les politiques internes de scoring en période IA.
+
+4. Formulation prête pour la thèse (RQ2)
+Pour la RQ2, la comparaison systématique des performances du logit, du RandomForest et de XGBoost montre que la transition vers l’ère IA s’accompagne d’une forte amélioration de la prévisibilité des décisions de crédit. Sur la période pré-IA (2007–2017), les AUC demeurent modestes (≈ 0,59 pour le logit, ≈ 0,62 pour les modèles d’arbres), ce qui suggère une structure décisionnelle relativement diffuse. En revanche, sur la période IA (2018–2023), les mêmes familles de modèles atteignent des AUC nettement supérieures (≈ 0,86 pour le logit et ≈ 0,91 pour le RandomForest/XGBoost), avec des accuracies de l’ordre de 0,85. Autrement dit, à covariables HMDA comparables, les modèles non linéaires capturent beaucoup mieux la logique d’acceptation en période IA, ce qui est cohérent avec l’hypothèse d’une standardisation accrue des processus de scoring et d’un usage plus systématique de signaux algorithmiques dans la décision finale.
+
+# %% [markdown]
+# ## RQ3 – Logit sur défaut proxy (default_proxy) ~ era + covariables
+#
+# Objectif :
+# - Utiliser la variable default_proxy construite sur desc_df.
+# - Estimer un logit de risque (proxy) en fonction de l’ère (IA vs pré-IA) + contrôles loan_purpose / loan_type.
+# - Exporter un tableau de coefficients (Table RQ3).
+#
+# NB : pour éviter des problèmes de mémoire, on échantillonne au maximum 1 000 000 d’observations.
+
+# %% [code]
+import statsmodels.api as sm
+
+# ------------------------------------------------------------
+# 1. (Re)construction éventuelle de default_proxy dans desc_df
+# ------------------------------------------------------------
+rq3_df = desc_df.copy()
+
+for col in ["rate_spread", "lien_status", "action_taken"]:
+    rq3_df[col] = pd.to_numeric(rq3_df[col], errors="coerce")
+
+if "default_proxy" not in rq3_df.columns:
+    def build_default_proxy(row):
+        # Actions "défavorables" (refus, retrait, etc.)
+        if row["action_taken"] in [3, 4, 5, 6]:
+            return 1
+        # Spread très élevé
+        if pd.notna(row["rate_spread"]) and row["rate_spread"] > 3:
+            return 1
+        # Lien junior (second lien)
+        if row["lien_status"] == 2:
+            return 1
+        return 0
+
+    rq3_df["default_proxy"] = rq3_df.apply(build_default_proxy, axis=1)
+
+rq3_df["default_proxy"] = rq3_df["default_proxy"].astype(int)
+
+# ------------------------------------------------------------
+# 2. Préparation des variables explicatives
+# ------------------------------------------------------------
+rq3_df = rq3_df.dropna(subset=["default_proxy", "era", "loan_purpose", "loan_type"]).copy()
+
+# Indicateur binaire era_IA
+rq3_df["era_IA"] = (rq3_df["era"] == "IA").astype(int)
+
+# Échantillonnage pour limiter la taille
+MAX_N = 1_000_000
+if len(rq3_df) > MAX_N:
+    rq3_sample = rq3_df.sample(n=MAX_N, random_state=42)
+else:
+    rq3_sample = rq3_df
+
+print("Taille échantillon RQ3 pour le logit défaut proxy :", rq3_sample.shape)
+
+# ------------------------------------------------------------
+# 3. Construction de X et y pour statsmodels.Logit
+# ------------------------------------------------------------
+X_rq3 = pd.get_dummies(
+    rq3_sample[["era_IA", "loan_purpose", "loan_type"]],
+    columns=["loan_purpose", "loan_type"],
+    drop_first=True
+)
+y_rq3 = rq3_sample["default_proxy"]
+
+# Ajout de la constante et conversion explicite en float
+X_rq3 = sm.add_constant(X_rq3, has_constant="add")
+X_rq3 = X_rq3.astype(float)
+y_rq3 = y_rq3.astype(float)
+
+logit_rq3 = sm.Logit(y_rq3, X_rq3).fit(disp=False)
+
+print("\n=== RQ3 – Logit default_proxy ~ era_IA + controls ===")
+print(logit_rq3.summary())
+
+# ------------------------------------------------------------
+# 4. Tableau des résultats
+# ------------------------------------------------------------
+params = logit_rq3.params
+bse = logit_rq3.bse
+zvals = params / bse
+pvals = logit_rq3.pvalues
+conf_int = logit_rq3.conf_int()
+conf_int.columns = ["[0.025]", "[0.975]"]
+
+rq3_table = pd.DataFrame({
+    "variable": params.index,
+    "Coef.": params.values,
+    "Std.Err.": bse.values,
+    "z": zvals.values,
+    "P>|z|": pvals.values,
+    "[0.025]": conf_int["[0.025]"].values,
+    "[0.975]": conf_int["[0.975]"].values
+})
+
+print("\n=== Table RQ3 – Logit default_proxy (échantillon) ===")
+display(rq3_table)
+
+rq3_path = os.path.join(out_dir, "table_rq3_logit_default_proxy_era_controls.csv")
+rq3_table.to_csv(rq3_path, index=False)
+print("Table RQ3 sauvegardée dans :", rq3_path)
+
+
+Taille échantillon RQ3 pour le logit défaut proxy : (1000000, 21)
+
+=== RQ3 – Logit default_proxy ~ era_IA + controls ===
+                           Logit Regression Results                           
+==============================================================================
+Dep. Variable:          default_proxy   No. Observations:              1000000
+Model:                          Logit   Df Residuals:                   999989
+Method:                           MLE   Df Model:                           10
+Date:                Fri, 28 Nov 2025   Pseudo R-squ.:                 0.01904
+Time:                        01:49:35   Log-Likelihood:            -6.7840e+05
+converged:                       True   LL-Null:                   -6.9157e+05
+Covariance Type:            nonrobust   LLR p-value:                     0.000
+=====================================================================================
+                        coef    std err          z      P>|z|      [0.025      0.975]
+-------------------------------------------------------------------------------------
+const                -0.3020      0.004    -81.174      0.000      -0.309      -0.295
+era_IA               -0.0264      0.014     -1.887      0.059      -0.054       0.001
+loan_purpose_2.0      1.0203      0.008    122.459      0.000       1.004       1.037
+loan_purpose_3.0      0.4496      0.004    100.989      0.000       0.441       0.458
+loan_purpose_4.0      1.7734      0.055     32.068      0.000       1.665       1.882
+loan_purpose_5.0      3.9959      0.357     11.191      0.000       3.296       4.696
+loan_purpose_31.0     0.1906      0.026      7.393      0.000       0.140       0.241
+loan_purpose_32.0     0.1287      0.028      4.620      0.000       0.074       0.183
+loan_type_2.0         0.5100      0.006     91.233      0.000       0.499       0.521
+loan_type_3.0         0.1831      0.014     13.560      0.000       0.157       0.210
+loan_type_4.0         0.3023      0.030     10.153      0.000       0.244       0.361
+=====================================================================================
+
+=== Table RQ3 – Logit default_proxy (échantillon) ===
+variable	Coef.	Std.Err.	z	P>|z|	[0.025]	[0.975]
+0	const	-0.301992	0.003720	-81.173623	0.000000e+00	-0.309283	-0.294700
+1	era_IA	-0.026378	0.013981	-1.886667	5.920515e-02	-0.053781	0.001025
+2	loan_purpose_2.0	1.020341	0.008332	122.458516	0.000000e+00	1.004011	1.036672
+3	loan_purpose_3.0	0.449591	0.004452	100.988760	0.000000e+00	0.440866	0.458317
+4	loan_purpose_4.0	1.773422	0.055302	32.067808	1.239706e-225	1.665032	1.881813
+5	loan_purpose_5.0	3.995900	0.357052	11.191360	4.494854e-29	3.296090	4.695709
+6	loan_purpose_31.0	0.190596	0.025781	7.392984	1.435692e-13	0.140067	0.241125
+7	loan_purpose_32.0	0.128720	0.027863	4.619822	3.840689e-06	0.074111	0.183330
+8	loan_type_2.0	0.509993	0.005590	91.233497	0.000000e+00	0.499037	0.520949
+9	loan_type_3.0	0.183108	0.013504	13.559908	6.922313e-42	0.156641	0.209574
+10	loan_type_4.0	0.302335	0.029777	10.153174	3.207597e-24	0.243972	0.360697
+Table RQ3 sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_rq3_logit_default_proxy_era_controls.csv
+RQ3 – Effet de l’ère IA sur le proxy de défaut (default_proxy)
+Pour la RQ3, on estime un modèle logit de la forme :
+
+
+où :
+
+default_proxy = 1 approxime un profil “dégradé / risqué” (actions 3–6, spread élevé, lien junior),
+era_IA = 1 si le dossier est en période IA, 0 sinon,
+les contrôles incluent les dummies de loan_purpose et loan_type (références : loan_purpose = 1.0, loan_type = 1.0).
+Taille de l’échantillon pour l’estimation : 1 000 000 observations (échantillon aléatoire de desc_df).
+
+1. Résumé des coefficients (Table RQ3)
+Variable	Coef.	Std.Err.	z	p-value	[0.025]	[0.975]
+const	-0.3020	0.0037	-81.17	< 0,001	-0.3093	-0.2947
+era_IA	-0.0264	0.0140	-1.89	0,059	-0.0538	0.0010
+loan_purpose_2.0	1.0203	0.0083	122.46	< 0,001	1.0040	1.0367
+loan_purpose_3.0	0.4496	0.0045	100.99	< 0,001	0.4409	0.4583
+loan_purpose_4.0	1.7734	0.0553	32.07	< 0,001	1.6650	1.8818
+loan_purpose_5.0	3.9959	0.3571	11.19	< 0,001	3.2961	4.6957
+loan_purpose_31.0	0.1906	0.0258	7.39	< 0,001	0.1401	0.2411
+loan_purpose_32.0	0.1287	0.0279	4.62	< 0,001	0.0741	0.1833
+loan_type_2.0	0.5100	0.0056	91.23	< 0,001	0.4990	0.5209
+loan_type_3.0	0.1831	0.0135	13.56	< 0,001	0.1566	0.2096
+loan_type_4.0	0.3023	0.0298	10.15	< 0,001	0.2440	0.3607
+Pseudo R² (McFadden) : 0,019 (effet global modeste mais statistiquement significatif pour l’ensemble des contrôles).
+Variable d’intérêt principale : era_IA (coefficient −0,0264, p ≈ 0,059).
+2. Effet de l’ère IA sur le proxy de défaut
+Le coefficient associé à era_IA vaut :
+
+
+En termes d’odds ratio :
+
+é
+
+On obtient donc :
+
+Comparaison	Coefficient	OR approx.	Interprétation rapide
+IA vs pré-IA	-0,026	≈ 0,97	Légère baisse (≈ 3 %) des odds de default_proxy, non significative à 5 %
+La p-value de 0,059 place l’effet juste au-dessus du seuil usuel de 5 % :
+on peut parler d’une tendance à la baisse des odds de “défaut proxy” en période IA,
+mais l’effet n’est pas significatif au seuil de 5 % (il le devient à 10 % si tu utilises ce seuil dans la thèse).
+Substantiellement, même si l’effet de signe est favorable (IA ↘ défaut proxy), l’ampleur est très modeste : une réduction d’environ 3 % des odds, à covariables loan_purpose et loan_type constantes.
+3. Rôle des motifs de prêt (loan_purpose)
+Les coefficients sur loan_purpose sont, eux, très significatifs et de grande amplitude :
+
+Par rapport au motif de référence (loan_purpose = 1.0, souvent achat de résidence principale), certains motifs sont associés à des odds de défaut proxy beaucoup plus élevées :
+loan_purpose_2.0 : coefficient ≈ 1,02 → OR ≈ 2,77
+loan_purpose_3.0 : coefficient ≈ 0,45 → OR ≈ 1,57
+loan_purpose_4.0 : coefficient ≈ 1,77 → OR ≈ 5,89
+loan_purpose_5.0 : coefficient ≈ 4,00 → OR ≈ 54,4 (avec un intervalle de confiance large mais très au-dessus de 1).
+Variable	Coef. approx.	OR approx.	Signal sur le risque (proxy)
+loan_purpose_2.0	1,02	≈ 2,8	odds de défaut proxy ≈ 2,8× plus élevées
+loan_purpose_3.0	0,45	≈ 1,6	odds ≈ 1,6× plus élevées
+loan_purpose_4.0	1,77	≈ 5,9	odds ≈ 6× plus élevées
+loan_purpose_5.0	3,99	>> 10	odds de défaut extrêmement plus élevées (proxy très risqué)
+Lecture rapide : la variabilité du proxy de défaut est beaucoup plus structurée par le motif de prêt que par le simple passage de la période pré-IA à l’ère IA. Certains segments de produits (par ex. refinancements spécifiques, prêts secondaires, motifs 4–5) concentrent une part disproportionnée de profils “à défaut proxy”.
+
+4. Rôle du type de prêt (loan_type)
+Les dummies de loan_type sont également significatives :
+
+loan_type_2.0 : coef ≈ 0,51 → OR ≈ 1,67
+loan_type_3.0 : coef ≈ 0,18 → OR ≈ 1,20
+loan_type_4.0 : coef ≈ 0,30 → OR ≈ 1,35
+Variable	Coef. approx.	OR approx.	Interprétation rapide
+loan_type_2.0	0,51	≈ 1,7	odds de défaut proxy ≈ +67 % vs type 1
+loan_type_3.0	0,18	≈ 1,2	odds ≈ +20 %
+loan_type_4.0	0,30	≈ 1,35	odds ≈ +35 %
+Là encore, une grande part de la variation du proxy de défaut se joue à l’intérieur de la composition produit (type de prêt), plutôt que dans un simple décalage global entre pré-IA et IA.
+
+5. Formulation prête pour la thèse (RQ3, paragraphe de synthèse)
+Pour la RQ3, nous avons estimé un modèle logit expliquant un proxy de défaut (combinaison d’actions défavorables, de spreads élevés et de liens juniors) par l’ère d’observation et une série de contrôles de composition (motif et type de prêt). Sur un échantillon d’un million de dossiers tirés de la base HMDA+ACS, le coefficient associé à l’ère IA est légèrement négatif (–0,026 ; p ≈ 0,059), ce qui correspond à une réduction d’environ 3 % des odds de défaut proxy par rapport à la période pré-IA. Cet effet reste cependant modeste et n’est pas significatif au seuil de 5 %, ce qui suggère qu’en moyenne, la transition vers l’ère IA n’a pas fondamentalement modifié le niveau global de risque observé au travers de ce proxy.
+
+En revanche, les coefficients attachés aux motifs et types de prêts sont très élevés et systématiquement significatifs : certains segments produit affichent des odds de défaut proxy de deux à six fois supérieures à celles du motif de référence, et certains types de prêts augmentent également significativement la probabilité de basculer dans le proxy de défaut. Autrement dit, la variabilité du risque capté par ce proxy est principalement structurée par la composition des portefeuilles (motif/type de prêt), plus que par un simple effet de rupture temporelle entre pré-IA et IA.
+"

@@ -1,0 +1,269 @@
+Voici le bloc 7 qui est le dernier bloc : "
+# %% [markdown]
+# ## RQ4 – Fairness étendue : DI, Equal Opportunity, FNR, Calibration par race (IA)
+#
+# Hypothèses :
+# - y_test, y_pred_rf (étiquettes 0/1) et y_pred_proba_rf (probas) existent pour la cohorte IA.
+# - race_test = ai_acs.loc[y_test.index, "derived_race"] a déjà été construit (comme pour Table 6.3).
+#
+# Objectif :
+# - Par race (IA) : calculer PP_rate, DI vs White, TPR, FNR, PPV, et une mesure simple de calibration.
+# - Exporter un Tableau 6.4 étendu pour la thèse.
+
+# %% [code]
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import confusion_matrix, brier_score_loss
+
+# ------------------------------------------------------------
+# 0. Vérifications de base
+# ------------------------------------------------------------
+if "ai_acs" not in globals():
+    raise ValueError("Le DataFrame 'ai_acs' est introuvable – exécute la partie HMDA+ACS (IA) avant cette cellule.")
+
+if "derived_race" not in ai_acs.columns:
+    raise ValueError("La colonne 'derived_race' est absente de ai_acs – impossible de calculer les fairness metrics par race.")
+
+if "approved" not in ai_acs.columns:
+    raise ValueError("La colonne 'approved' est absente de ai_acs – impossible de définir y_true.")
+
+# ------------------------------------------------------------
+# 1. Construction X / y pour le RF de fairness (cohorte IA complète)
+# ------------------------------------------------------------
+fair_ml_cols = ["loan_purpose", "loan_type", "hoepa_status", "state_code", "year", "approved"]
+fair_ml_cols = [c for c in fair_ml_cols if c in ai_acs.columns]
+
+print("Colonnes utilisées pour le RF fairness (IA) :", fair_ml_cols)
+
+fair_df = ai_acs[fair_ml_cols + ["derived_race"]].dropna(subset=["approved", "derived_race"]).copy()
+fair_df["approved"] = fair_df["approved"].astype(int)
+
+X_fair = pd.get_dummies(
+    fair_df.drop(columns=["approved", "derived_race"]),
+    drop_first=True
+)
+y_fair = fair_df["approved"]
+race_fair = fair_df["derived_race"]
+
+print("X_fair shape :", X_fair.shape, "| y_fair shape :", y_fair.shape)
+
+# ------------------------------------------------------------
+# 2. Entraînement du RF de fairness sur toute la cohorte IA
+# ------------------------------------------------------------
+rf_fair = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=None,
+    random_state=42,
+    n_jobs=-1
+)
+rf_fair.fit(X_fair, y_fair)
+
+y_pred_fair = rf_fair.predict(X_fair)
+y_proba_fair = rf_fair.predict_proba(X_fair)[:, 1]
+
+print("RF fairness entraîné sur la cohorte IA complète.")
+
+# ------------------------------------------------------------
+# 3. Fonction utilitaire pour stats de confusion + calibration
+# ------------------------------------------------------------
+def group_stats(y_true, y_pred, y_proba, mask, min_n=50):
+    n = int(mask.sum())
+    if n < min_n:
+        return None
+
+    y_g = y_true[mask]
+    yhat_g = y_pred[mask]
+    p_g = y_proba[mask]
+
+    cm = confusion_matrix(y_g, yhat_g)
+    if cm.shape != (2, 2):
+        return None
+    tn, fp, fn, tp = cm.ravel()
+
+    total = tn + fp + fn + tp
+    pp_rate = (tp + fp) / total if total > 0 else np.nan
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else np.nan
+    fnr = fn / (tp + fn) if (tp + fn) > 0 else np.nan
+    ppv = tp / (tp + fp) if (tp + fp) > 0 else np.nan
+
+    # Calibration simple : Brier score de groupe
+    try:
+        calib = brier_score_loss(y_g, p_g)
+    except Exception:
+        calib = np.nan
+
+    return {
+        "n": n,
+        "PP_rate": pp_rate,
+        "TPR": tpr,
+        "FNR": fnr,
+        "PPV": ppv,
+        "Calibration_Brier": calib
+    }
+
+# ------------------------------------------------------------
+# 4. Calcul des métriques par race (cohorte IA, RF_fair)
+# ------------------------------------------------------------
+group_rows = []
+races = race_fair.dropna().unique()
+
+for grp in races:
+    mask = (race_fair == grp).values  # bool numpy
+    stats = group_stats(y_fair.values, y_pred_fair, y_proba_fair, mask)
+    if stats is None:
+        group_rows.append({
+            "Race": grp,
+            "n": int(mask.sum()),
+            "PP_rate": np.nan,
+            "TPR": np.nan,
+            "FNR": np.nan,
+            "PPV": np.nan,
+            "Calibration_Brier": np.nan
+        })
+        continue
+
+    row = {
+        "Race": grp,
+        "n": stats["n"],
+        "PP_rate": stats["PP_rate"],
+        "TPR": stats["TPR"],
+        "FNR": stats["FNR"],
+        "PPV": stats["PPV"],
+        "Calibration_Brier": stats["Calibration_Brier"]
+    }
+    group_rows.append(row)
+
+fair_base = pd.DataFrame(group_rows)
+
+# ------------------------------------------------------------
+# 5. Normalisation vs White : DI, EO diff, FNR diff, PPV diff, Calibration diff
+# ------------------------------------------------------------
+ref_grp = "White"
+if ref_grp not in list(fair_base["Race"]):
+    raise ValueError("Groupe de référence 'White' absent – impossible de normaliser les métriques.")
+
+ref_row = fair_base[fair_base["Race"] == ref_grp].iloc[0]
+
+fair_ext_rows = []
+for _, row in fair_base.iterrows():
+    di = row["PP_rate"] / ref_row["PP_rate"] if ref_row["PP_rate"] > 0 else np.nan
+    eo_diff = row["TPR"] - ref_row["TPR"] if pd.notna(row["TPR"]) else np.nan
+    fnr_diff = row["FNR"] - ref_row["FNR"] if pd.notna(row["FNR"]) else np.nan
+    ppv_diff = row["PPV"] - ref_row["PPV"] if pd.notna(row["PPV"]) else np.nan
+    calib_diff = row["Calibration_Brier"] - ref_row["Calibration_Brier"] if pd.notna(row["Calibration_Brier"]) else np.nan
+
+    fair_ext_rows.append({
+        "Race": row["Race"],
+        "n": row["n"],
+        "PP_rate": row["PP_rate"],
+        "DisparateImpact_vs_White": di,
+        "TPR": row["TPR"],
+        "EqualOpportunityDiff_vs_White": eo_diff,
+        "FNR": row["FNR"],
+        "FNRDiff_vs_White": fnr_diff,
+        "PPV": row["PPV"],
+        "PredictiveParityDiff_vs_White": ppv_diff,
+        "Calibration_Brier": row["Calibration_Brier"],
+        "CalibrationDiff_vs_White": calib_diff
+    })
+
+fairness_extended = pd.DataFrame(fair_ext_rows)
+
+print("\n=== Tableau 6.4 – Fairness étendue RF par race (IA, réf = White) ===")
+display(fairness_extended)
+
+fair_ext_path = os.path.join(out_dir, "table_6_4_fairness_extended_rf_by_race_ia.csv")
+fairness_extended.to_csv(fair_ext_path, index=False)
+print("Tableau 6.4 sauvegardé dans :", fair_ext_path)
+
+
+Colonnes utilisées pour le RF fairness (IA) : ['loan_purpose', 'loan_type', 'hoepa_status', 'state_code', 'year', 'approved']
+X_fair shape : (571820, 6) | y_fair shape : (571820,)
+RF fairness entraîné sur la cohorte IA complète.
+
+=== Tableau 6.4 – Fairness étendue RF par race (IA, réf = White) ===
+Race	n	PP_rate	DisparateImpact_vs_White	TPR	EqualOpportunityDiff_vs_White	FNR	FNRDiff_vs_White	PPV	PredictiveParityDiff_vs_White	Calibration_Brier	CalibrationDiff_vs_White
+0	Race Not Available	128484	0.517932	0.862654	0.784339	-0.127599	0.215661	0.127599	0.618940	-0.280617	0.211293	0.125880
+1	White	351131	0.600394	1.000000	0.911938	0.000000	0.088062	0.000000	0.899557	0.000000	0.085413	0.000000
+2	Black or African American	37503	0.489508	0.815310	0.911715	-0.000223	0.088285	0.000223	0.911864	0.012307	0.067875	-0.017538
+3	Asian	42574	0.556302	0.926561	0.882695	-0.029243	0.117305	0.029243	0.911206	0.011648	0.099387	0.013974
+4	Joint	8641	0.625969	1.042597	0.917369	0.005432	0.082631	-0.005432	0.905158	0.005601	0.090085	0.004672
+5	2 or more minority races	723	0.435685	0.725664	0.902821	-0.009116	0.097179	0.009116	0.914286	0.014728	0.065763	-0.019650
+6	Free Form Text Only	229	0.209607	0.349116	0.941176	0.029239	0.058824	-0.029239	1.000000	0.100443	0.038677	-0.046736
+7	American Indian or Alaska Native	1557	0.434811	0.724208	0.904271	-0.007667	0.095729	0.007667	0.906942	0.007385	0.067477	-0.017936
+8	Native Hawaiian or Other Pacific Islander	978	0.452965	0.754446	0.915138	0.003200	0.084862	-0.003200	0.900677	0.001120	0.063404	-0.022009
+Tableau 6.4 sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_6_4_fairness_extended_rf_by_race_ia.csv
+6.4 Fairness étendue du modèle RF IA – lecture détaillée du Tableau 6.4
+Le Tableau 6.4 reporte, pour chaque groupe racial, un ensemble de métriques de fairness calculées sur la cohorte IA (HMDA+ACS) à partir du modèle Random Forest entraîné sur les seules variables structurelles (loan_purpose, loan_type, hoepa_status, state_code, year). Le groupe White sert de référence pour les métriques relatives (ratios et différences).
+
+Pour mémoire :
+
+PP_rate : taux de prédiction positive (\Pr(\hat{Y}=1)) (proxy du Disparate Impact).
+DisparateImpact_vs_White : ratio des PP_rate par rapport au groupe White.
+TPR : True Positive Rate (sensibilité, Equal Opportunity).
+EqualOpportunityDiff_vs_White : différence de TPR vs White.
+FNR : False Negative Rate (= 1 - \text{TPR}).
+FNRDiff_vs_White : différence de FNR vs White.
+PPV : Positive Predictive Value (précision conditionnelle, Predictive Parity).
+PredictiveParityDiff_vs_White : différence de PPV vs White.
+Calibration_Brier : score de Brier par groupe (plus petit = meilleure calibration).
+CalibrationDiff_vs_White : différence de Brier vs White.
+6.4.1 Rappel chiffré des principaux groupes
+On se focalise sur les groupes majoritaires (en effectif) :
+
+Race	n	PP_rate	DI vs White	TPR	EO diff vs White	FNR	FNR diff vs White	PPV	PPV diff vs White	Brier	Calib diff vs White
+White	351 131	0.6004	1.0000	0.9119	0.0000	0.0881	0.0000	0.8996	0.0000	0.0854	0.0000
+Race Not Available	128 484	0.5179	0.8627	0.7843	-0.1276	0.2157	+0.1276	0.6189	-0.2806	0.2113	+0.1259
+Black or African American	37 503	0.4895	0.8153	0.9117	-0.0002	0.0883	+0.0002	0.9119	+0.0123	0.0679	-0.0175
+Asian	42 574	0.5563	0.9266	0.8827	-0.0292	0.1173	+0.0292	0.9112	+0.0116	0.0994	+0.0140
+Joint	8 641	0.6260	1.0426	0.9174	+0.0054	0.0826	-0.0054	0.9052	+0.0056	0.0901	+0.0047
+Les autres catégories (Native Hawaiian, American Indian, 2+ minority races, Free Form Text Only) ont des effectifs nettement plus faibles et doivent être interprétées avec prudence.
+
+6.4.2 Disparate Impact (DI) – intensité de scoring par groupe
+Le Disparate Impact est approché par le ratio des taux de prédiction positive (\text{PP_rate}) relativement à White :
+
+White : (\text{DI} = 1) (groupe de référence, PP_rate ≈ 0,60).
+Black or African American : (\text{DI} \approx 0,82) (PP_rate ≈ 0,49).
+Asian : (\text{DI} \approx 0,93) (PP_rate ≈ 0,56).
+Race Not Available : (\text{DI} \approx 0,86) (PP_rate ≈ 0,52).
+Joint : (\text{DI} \approx 1,04) (PP_rate ≈ 0,63, légèrement supérieur à White).
+En référence à la « règle des 80 % » (four-fifths rule), plusieurs groupes se situent en-dessous de 0,8–0,85 (par exemple, Black ≈ 0,82, Race Not Available ≈ 0,86, certains groupes minoritaires encore plus bas), ce qui suggère une intensité de scoring plus faible (moins de prédictions positives) que pour les emprunteurs blancs, à profil structurel comparable.
+
+6.4.3 Equal Opportunity (TPR/FNR) – probabilité de “capturer” les bons profils
+L’Equal Opportunity se lit à travers les TPR et FNR conditionnels :
+
+White : TPR ≈ 0,912, FNR ≈ 0,088.
+Black : TPR ≈ 0,912, FNR ≈ 0,088 — quasi-identique à White (différences de l’ordre de 0,0002), ce qui suggère qu’à score structurel donné, le modèle ne pénalise pas particulièrement les dossiers approuvés noirs en termes de probabilité d’être correctement classés.
+Asian : TPR ≈ 0,883, FNR ≈ 0,117 — soit une perte de sensibilité d’environ 3 points par rapport à White (EO diff ≈ -0,029, FNR diff ≈ +0,029).
+Race Not Available : TPR ≈ 0,784, FNR ≈ 0,216 — soit une dégradation très marquée par rapport à White (EO diff ≈ -0,128, FNR diff ≈ +0,128).
+Autrement dit :
+
+Pour les emprunteurs noirs, l’Equal Opportunity est pratiquement alignée sur celle des emprunteurs blancs.
+En revanche, les dossiers avec race manquante (Race Not Available) subissent une probabilité plus élevée d’être faussement négatifs (non approuvés alors qu’ils le sont en réalité), ce qui confirme le rôle problématique des informations incomplètes dans la chaîne de scoring.
+6.4.4 Predictive Parity (PPV) – qualité de la sélection parmi les approuvés
+La Predictive Parity se lit via la PPV (taux de “bons” parmi les positifs) et les écarts vs White :
+
+White : PPV ≈ 0,900 (référence).
+Black : PPV ≈ 0,912, soit un légère sur-performance (+0,012) : les dossiers noirs que le modèle approuve semblent être au moins aussi “bons” (en termes de vérité terrain) que ceux des emprunteurs blancs.
+Asian : PPV ≈ 0,911 (+0,012) — même constat de slight sur-sélection.
+Joint : PPV ≈ 0,905 (+0,006) — très proche de White.
+Race Not Available : PPV ≈ 0,619, soit un déficit massif de précision (-0,281). Le modèle approuve beaucoup de dossiers de ce groupe qui se révèlent ex post incorrects, ce qui traduit un problème de calibration et de bruit sur ces profils incomplets.
+En synthèse, le modèle est relativement équilibré en termes de Predictive Parity pour les grands groupes observables (White, Black, Asian, Joint). Les écarts majeurs se concentrent sur le segment Race Not Available et, à moindre échelle, sur certains sous-groupes rares.
+
+6.4.5 Calibration par groupe – Brier score
+Le score de Brier synthétise la qualité de calibration des probabilités prédictives :
+
+White : Brier ≈ 0,085 (référence, calibration relativement bonne).
+Black : Brier ≈ 0,068 (différence ≈ -0,018) — la calibration est même légèrement meilleure que pour White.
+Asian : Brier ≈ 0,099 (différence ≈ +0,014) — calibration un peu plus dégradée.
+Race Not Available : Brier ≈ 0,211 (différence ≈ +0,126) — calibration nettement dégradée, cohérente avec le faible PPV et l’EO très défavorable.
+Ces résultats confirment que :
+
+Le modèle RF IA est globalement bien calibré pour les groupes observables majoritaires (White, Black, Asian, Joint), avec des écarts de calibration relativement modérés.
+La catégorie Race Not Available cumule tous les signaux de risque de fairness : Disparate Impact défavorable, Equal Opportunity détériorée, Predictive Parity faible et calibration très médiocre.
+6.4.6 Lecture synthétique pour la thèse
+Une formulation possible (à adapter dans le texte) :
+
+« Sur la cohorte IA (HMDA+ACS), le modèle Random Forest entraîné sur des covariables structurelles affiche des performances de fairness relativement convergentes entre emprunteurs blancs et noirs : les taux de vrais positifs, de faux négatifs et la précision conditionnelle sont quasiment identiques, ce qui suggère une forme d’“equal opportunity” et de “predictive parity” entre ces deux groupes sur le support considéré.
+En revanche, les dossiers pour lesquels la race n’est pas renseignée constituent un sous-groupe particulièrement problématique : ils présentent un Disparate Impact défavorable (ratio ≈ 0,86), une sensibilité nettement inférieure (TPR ≈ 0,78 contre 0,91 pour les blancs), une probabilité de faux négatif beaucoup plus élevée, une précision très dégradée (PPV ≈ 0,62) et un score de Brier plus de deux fois supérieur. Ces résultats illustrent le fait que l’“opacité” des informations démographiques, loin de neutraliser les biais, peut au contraire concentrer les risques de fairness sur des profils mal renseignés. »
+
+"

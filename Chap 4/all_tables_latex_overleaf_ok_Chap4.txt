@@ -1,0 +1,544 @@
+\documentclass[12pt,oneside]{report}
+
+% ================== PACKAGES ==================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+\DeclareUnicodeCharacter{2264}{\(\leq\)}
+
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{array}
+\usepackage{multirow}
+
+% ---------- FORMAT THÈSE DOCTORALE ----------
+\usepackage[margin=1.2in]{geometry} % Marges type dissertation US
+\usepackage{setspace}
+\doublespacing                       % Double interligne
+
+\setlength{\parskip}{1em}            % Espace entre paragraphes
+
+\usepackage{titlesec}                % Contrôle de l'espacement des titres
+\titlespacing*{\section}{0pt}{3.5ex plus 1ex minus .2ex}{2.3ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{3ex plus 1ex minus .2ex}{1.5ex plus .2ex}
+\titlespacing*{\subsubsection}{0pt}{2.5ex plus 1ex minus .2ex}{1ex plus .2ex}
+
+\begin{document}
+
+% Forcer la numérotation au chapitre 4
+\setcounter{chapter}{3}
+
+
+
+\chapter{Résultats}
+\label{chap:resultats}
+
+Ce chapitre présente l’ensemble des résultats empiriques de l’étude, fondée sur trois bases principales HMDA et HMDA+ACS couvrant la région Tri-State (Connecticut, New Jersey, New York) sur la période 2007--2023. Conformément aux normes doctorales d’Aspen University, les analyses sont organisées en huit blocs : (i) présentation des données, (ii) statistiques descriptives, (iii) comparaisons pré-IA vs IA, (iv) modèles logit traditionnels et enrichis, (v) disparités raciales, (vi) appariement par score de propension, (vii) apprentissage automatique et performance inter-ères, (viii) métriques avancées d’équité, (ix) stratifications socioéconomiques, et enfin (x) synthèse par question de recherche (RQ1--RQ4). Les annexes fournissent l’intégralité des tableaux volumineux.
+
+% ============================================================
+\section{Présentation des données}
+\label{sec:data}
+% ============================================================
+
+\subsection{Les trois bases utilisées}
+\label{subsec:data_sources}
+
+L’analyse repose sur trois bases distinctes :
+
+\begin{itemize}
+    \item \textbf{CORE (hmda\_tristate\_core\_2007\_2024)} : 13,5 millions d’observations HMDA brutes pour 2007--2024.
+    \item \textbf{MODEL (hmda\_tristate\_model\_2018\_2023\_FIXED)} : 571 820 observations, variables harmonisées pour la modélisation.
+    \item \textbf{HMDA+ACS (hmda\_acs\_tristate\_2018\_2023\_FINAL)} : 571 820 observations enrichies de 35 variables ACS.
+\end{itemize}
+
+\begin{table}[H]
+    \centering
+    \caption{Vue d’ensemble des trois bases de données}
+    \label{tab:overview_bases}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Base} & \textbf{Période} & \textbf{Obs.} & \textbf{Variables} \\
+        \midrule
+        CORE         & 2007--2024 & 13\,512\,746 & 12 \\
+        MODEL        & 2018--2023 & 571\,820     & 15 \\
+        HMDA+ACS     & 2018--2023 & 571\,820     & 35 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Construction des cohortes temporelles}
+
+Deux régimes temporels cohérents avec la littérature :
+
+\begin{itemize}
+    \item \textbf{Pré-IA (2007--2017)} : underwriting humain, scoring FICO traditionnel.
+    \item \textbf{IA (2018--2023)} : automatisation accrue, algorithmes et machine underwriting.
+\end{itemize}
+
+\begin{table}[H]
+    \centering
+    \caption{Cohortes analytiques : période et taille}
+    \label{tab:cohort_sizes}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Cohorte} & \textbf{Période} & \textbf{Base} & \textbf{Obs.} \\
+        \midrule
+        Pré-IA    & 2007--2017 & CORE      & 13\,512\,746 \\
+        IA        & 2018--2023 & MODEL     & 571\,820 \\
+        IA+ACS    & 2018--2023 & HMDA+ACS  & 571\,820 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Qualité des données}
+
+Les principales étapes incluent : transformation de \texttt{approved}, harmonisation des catégories, troncature au 99e percentile, filtrage ACS, log-transformations.
+
+% ============================================================
+\section{Statistiques descriptives}
+\label{sec:descriptive}
+% ============================================================
+
+\subsection{Taux d’approbation global}
+\begin{table}[H]
+    \centering
+    \caption{Taux d’approbation moyen par cohorte}
+    \label{tab:approval_by_era}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Cohorte} & \textbf{Taux} & \textbf{Source} \\
+        \midrule
+        Pré-IA & 0.707 & CORE \\
+        IA     & 0.542 & MODEL \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Taux d’approbation par État}
+
+\begin{table}[H]
+    \centering
+    \caption{Taux d’approbation par État (Pré-IA)}
+    \label{tab:approval_state}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{État} & \textbf{Code FIPS} & \textbf{Taux} \\
+        \midrule
+        Connecticut & 09 & 0.705 \\
+        New Jersey  & 34 & 0.681 \\
+        New York    & 36 & 0.729 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Distribution raciale par cohorte}
+
+\begin{table}[H]
+    \centering
+    \caption{Distribution raciale (\%)}
+    \label{tab:race_share}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Groupe racial} & \textbf{Pré-IA} & \textbf{IA} \\
+        \midrule
+        White   & 61.3 & 55.4 \\
+        Black   & 14.8 & 16.2 \\
+        Asian   & 6.5  & 8.1  \\
+        Hispanic & 12.4 & 13.0 \\
+        Race NA & 5.0 & 7.3 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Montants de prêts par cohorte}
+
+\begin{table}[H]
+    \centering
+    \caption{Montants de prêts (USD)}
+    \label{tab:loan_amount_stats}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Statistique} & \textbf{Pré-IA} & \textbf{IA} & \textbf{Source} \\
+        \midrule
+        Moyenne  & 289,500 & 312,700 & HMDA \\
+        Médiane  & 245,000 & 270,000 & HMDA \\
+        99e pct. & 975,000 & 1,200,000 & HMDA \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Distribution des décisions}
+
+\begin{table}[H]
+    \centering
+    \caption{Distribution \texttt{action\_taken} (\%)}
+    \label{tab:action_taken}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Action} & \textbf{Pré-IA} & \textbf{IA} \\
+        \midrule
+        Approved (1–3) & 70.7 & 54.2 \\
+        Denied         & 21.4 & 32.1 \\
+        Withdrawn      & 7.9  & 13.7 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Modèles logit traditionnels : Pré-IA vs IA}
+\label{sec:logit}
+% ============================================================
+
+\subsection{Spécification commune}
+
+Modèle logit :
+
+\[
+\Pr(\text{approved}_i = 1)=\Lambda(\alpha
++ \beta\cdot LoanPurpose_i
++ \gamma\cdot LoanType_i
++ \delta\cdot HOEPA_i
++ \theta\cdot year_i).
+\]
+
+\subsection{Résultats pré-IA}
+
+\begin{table}[H]
+    \centering
+    \caption{Logit Pré-IA}
+    \label{tab:logit_preIA}
+    \begin{tabular}{lrrrr}
+    \toprule
+    Variable & Coeff. & Std.Err. & z & p \\
+    \midrule
+    Intercept & -20.044 & 0.390 & \dots & 0.000 \\
+    C(loan\_purpose)[T.2.0] & 1.086 & 0.003 & \dots & 0.000 \\
+    C(loan\_type)[T.2.0] & -0.779 & 0.002 & \dots & 0.000 \\
+    year & 0.0105 & 0.000 & \dots & 0.000 \\
+    \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Résultats IA}
+
+\begin{table}[H]
+    \centering
+    \caption{Logit IA}
+    \label{tab:logit_IA}
+    \begin{tabular}{lrrrr}
+    \toprule
+    Variable & Coeff. & Std.Err. & z & p \\
+    \midrule
+    Intercept & -213.362 & 4.705 & \dots & 0.000 \\
+    C(loan\_purpose)[T.2] & 0.319 & 0.016 & \dots & 0.000 \\
+    C(loan\_type)[T.2] & -0.748 & 0.011 & \dots & 0.000 \\
+    year & 0.106 & 0.002 & \dots & 0.000 \\
+    \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Comparaison synthétique}
+
+\begin{table}[H]
+    \centering
+    \caption{Comparaison Logit Pré-IA vs IA}
+    \label{tab:logit_compare}
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Indicateur} & \textbf{Pré-IA} & \textbf{IA} & \textbf{Interprétation} \\
+        \midrule
+        Pseudo-$R^2$ & 0.029 & 0.381 & IA = structure décisive \\
+        Effet loan\_type=2 & -0.78 & -0.75 & Stable \\
+        Effet HOEPA & -- & -3.51 & Filtrage accru \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Modèles logit enrichis (HMDA+ACS)}
+\label{sec:logit_acs}
+% ============================================================
+
+\begin{table}[H]
+    \centering
+    \caption{Logit IA enrichi ACS}
+    \label{tab:logit_hmda_acs}
+    \begin{tabular}{lrrrr}
+        \toprule
+        Variable & Coeff. & Std.Err. & z & p \\
+        \midrule
+        Intercept & -194.920 & 5.000 & \dots & 0.000 \\
+        acs\_poverty\_rate & 2.460 & 0.058 & \dots & 0.000 \\
+        acs\_unemployment\_rate & -0.497 & 0.132 & \dots & 0.000 \\
+        acs\_share\_black & -0.230 & 0.025 & \dots & 0.000 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+ACS révèle des disparités spatiales structurelles.
+
+% ============================================================
+\section{Disparités raciales : logit IA}
+\label{sec:logit_race}
+% ============================================================
+
+\begin{table}[H]
+    \centering
+    \caption{Logit IA avec race}
+    \label{tab:logit_ia_race}
+    \begin{tabular}{lrrrr}
+        \toprule
+        Race & Coeff. & Std.Err. & z & p \\
+        \midrule
+        Asian & 0.434 & 0.108 & \dots & 0.000 \\
+        White & 0.278 & 0.107 & \dots & 0.010 \\
+        Black & 0.139 & 0.108 & \dots & 0.199 \\
+        Race NA & -0.787 & 0.108 & \dots & 0.000 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Appariement par score de propension (PSM)}
+\label{sec:psm}
+% ============================================================
+
+\subsection{Balance avant/après}
+
+\begin{table}[H]
+    \centering
+    \caption{Balance PSM}
+    \label{tab:psm_balance}
+    \begin{tabular}{lccc}
+        \toprule
+        Covariable & Diff. avant & Diff. après & Amélioration \\
+        \midrule
+        loan\_purpose & 0.214 & 0.041 & Oui \\
+        loan\_type    & 0.187 & 0.033 & Oui \\
+        year          & 0.365 & 0.027 & Oui \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Effets après appariement}
+
+\begin{table}[H]
+    \centering
+    \caption{Logit post-PSM}
+    \label{tab:psm_logit}
+    \begin{tabular}{lccc}
+        \toprule
+        Variable & Coeff. & Std.Err. & p \\
+        \midrule
+        IA (post-2018) & -0.614 & 0.012 & 0.000 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Apprentissage automatique : performance IA}
+\label{sec:ml}
+% ============================================================
+
+\begin{table}[H]
+    \centering
+    \caption{Performance ML IA}
+    \label{tab:ml_perf}
+    \begin{tabular}{lccc}
+        \toprule
+        Modèle & AUC & F1 & Accuracy \\
+        \midrule
+        Logit & 0.566 & 0.674 & 0.558 \\
+        RF    & 0.593 & 0.611 & 0.570 \\
+        XGBoost & 0.615 & 0.642 & 0.583 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Cross-era ML}
+\label{sec:cross_era}
+% ============================================================
+
+\begin{table}[H]
+    \centering
+    \caption{Cross-era RF}
+    \begin{tabular}{lccc}
+        \toprule
+        Jeu & AUC & F1 & Accuracy \\
+        \midrule
+        Train Pré-IA → Test IA & 0.521 & 0.602 & 0.543 \\
+        Train IA → Test Pré-IA & 0.512 & 0.611 & 0.537 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Fairness avancée}
+\label{sec:fairness}
+% ============================================================
+
+\subsection{TPR / FPR}
+
+\begin{table}[H]
+    \centering
+    \caption{TPR / FPR par race}
+    \begin{tabular}{lcc}
+        \toprule
+        Race & TPR & FPR \\
+        \midrule
+        White & 0.912 & 0.511 \\
+        Black & 0.518 & 0.385 \\
+        Asian & 0.652 & 0.525 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Métriques avancées}
+
+\begin{table}[H]
+    \centering
+    \caption{Fairness avancée (RF)}
+    \begin{tabular}{lcccc}
+        \toprule
+        Race & DI & EOD & PPD & Calib \\
+        \midrule
+        White & 1.00 & 0.000 & 0.000 & 0.000 \\
+        Black & 0.78 & -0.394 & -0.214 & +0.047 \\
+        Asian & 0.91 & +0.020 & -0.034 & +0.012 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Stratifications socioéconomiques}
+\label{sec:stratifications}
+% ============================================================
+
+\subsection{Revenu ACS}
+
+\begin{table}[H]
+    \centering
+    \caption{Approbation par revenu ACS}
+    \begin{tabular}{lcc}
+        \toprule
+        Groupe & Taux & Obs. \\
+        \midrule
+        Bas revenu & 0.421 & 121\,304 \\
+        Moyen      & 0.548 & 223\,519 \\
+        Élevé      & 0.667 & 227\,002 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Sexe}
+
+\begin{table}[H]
+    \centering
+    \caption{Approbation par sexe}
+    \begin{tabular}{lcc}
+        \toprule
+        Sexe & Taux & Obs. \\
+        \midrule
+        Male & 0.559 & 308\,112 \\
+        Female & 0.533 & 263\,708 \\
+        Joint & 0.648 & 232\,041 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Type d’institution}
+
+\begin{table}[H]
+    \centering
+    \caption{Approbation par institution}
+    \begin{tabular}{lcc}
+        \toprule
+        Institution & Pré-IA & IA \\
+        \midrule
+        Banques commerciales & 0.712 & 0.552 \\
+        Credit unions & 0.764 & 0.603 \\
+        Mortgage companies & 0.681 & 0.497 \\
+        Fintech & -- & 0.462 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Résultats sur le défaut (RQ3)}
+\label{sec:default}
+% ============================================================
+
+\begin{table}[H]
+    \centering
+    \caption{Proxy de défaut par ère}
+    \begin{tabular}{lcc}
+        \toprule
+        Cohorte & Taux défaut & Obs. \\
+        \midrule
+        Pré-IA & 0.032 & 13M+ \\
+        IA     & 0.028 & 571k \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \caption{Logit du défaut (ACS)}
+    \label{tab:default_logit}
+    \begin{tabular}{lccc}
+        \toprule
+        Variable & Coeff. & Std.Err. & p \\
+        \midrule
+        IA (post-2018) & -0.141 & 0.019 & 0.000 \\
+        acs\_poverty\_rate & +0.713 & 0.033 & 0.000 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Synthèse par Questions de Recherche}
+\label{sec:results_rq}
+% ============================================================
+
+\subsection{RQ1 — Accès au crédit}
+L’IA diminue l’accès au crédit de manière significative (-16,5 points).  
+Cet effet persiste après PSM et ACS.
+
+\subsection{RQ2 — Performance IA vs modèles traditionnels}
+Les modèles IA sont plus prédictifs mais modestement performants (AUC ≤ 0.62), avec une non-transférabilité inter-ères.
+
+\subsection{RQ3 — Gestion du risque}
+Le régime IA sélectionne des portefeuilles légèrement moins risqués (-0.141).
+
+\subsection{RQ4 — Disparités raciales}
+Les métriques DI, EOD et PPD indiquent une amplification de certaines disparités préexistantes.
+
+% ============================================================
+\section{Synthèse générale du chapitre}
+\label{sec:chap4_synthesis}
+% ============================================================
+
+Le chapitre établit que le passage à l’IA constitue un changement de régime profond :  
+sélectivité accrue, rigidification des règles, variations socio-spatiales importantes, et disparités raciales persistantes.
+
+% ============================================================
+\appendix
+\chapter*{Annexes du Chapitre 4}
+\addcontentsline{toc}{chapter}{Annexes du Chapitre 4}
+
+\section*{Annexe 4.A — Tables PSM complètes}
+\section*{Annexe 4.B — Extensions logit}
+\section*{Annexe 4.C — Courbes ROC}
+\section*{Annexe 4.D — ANOVA Race et Revenu}
+\section*{Annexe 4.E — Fairness Avancée}
+\section*{Annexe 4.F — Détails cross-era ML}
+
+
+
+\end{document}

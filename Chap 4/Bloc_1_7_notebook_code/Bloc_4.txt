@@ -1,0 +1,816 @@
+Voici le bloc 4 : "
+# 8. Propensity Score Matching (PSM) – pré-IA vs IA
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import NearestNeighbors
+
+# 8.1. Construction du DataFrame combiné pré-IA / IA
+
+pre_ai_psm = pre_ai.copy()
+ai_hmda_psm = ai_hmda.copy()
+
+pre_ai_psm["era"] = "pre_IA"
+ai_hmda_psm["era"] = "IA"
+
+# Jeux de covariables à tester (du plus riche au plus simple)
+cov_sets_candidates = [
+    ["loan_purpose", "loan_type", "hoepa_status", "state_code"],
+    ["loan_purpose", "loan_type", "state_code"],
+    ["loan_purpose", "loan_type"],
+    ["state_code"],
+]
+
+# Colonnes réellement disponibles dans les deux bases
+all_cols = set(pre_ai_psm.columns).intersection(set(ai_hmda_psm.columns))
+
+# Filtre les sets pour ne garder que les covariables présentes dans les deux DF
+cov_sets = []
+for covs in cov_sets_candidates:
+    covs_ok = [c for c in covs if c in all_cols]
+    if len(covs_ok) > 0:
+        cov_sets.append(covs_ok)
+
+print("Jeux de covariables possibles (après vérification des colonnes) :")
+for s in cov_sets:
+    print("  -", s)
+
+# Échantillonnage pour ne pas exploser la RAM
+N_MAX_PRE = 300_000
+N_MAX_IA  = 300_000
+
+pre_sample = pre_ai_psm.sample(min(N_MAX_PRE, len(pre_ai_psm)), random_state=42)
+ia_sample  = ai_hmda_psm.sample(min(N_MAX_IA,  len(ai_hmda_psm)),  random_state=42)
+
+psm_df = pd.concat([pre_sample, ia_sample], axis=0)
+psm_df["treated"] = (psm_df["era"] == "IA").astype(int)
+
+print("\npsm_df shape (échantillon combiné) :", psm_df.shape)
+
+# 8.1.b. Recherche d'un set de covariables avec strates communes pré-IA / IA
+
+chosen_covs = None
+psm_overlap = None
+
+for covs in cov_sets:
+    print("\n--- Test des covariables :", covs, "---")
+    df_tmp = psm_df.copy()
+
+    # Construire une "strate" = concaténation des covariables
+    df_tmp["strata"] = df_tmp[covs].astype(str).agg(lambda row: "|".join(row), axis=1)
+
+    strata_counts = df_tmp.groupby(["strata", "treated"]).size().unstack(fill_value=0)
+
+    # Strates présentes dans les deux groupes (treated=1 et treated=0)
+    valid_strata = strata_counts[(strata_counts[0] > 0) & (strata_counts[1] > 0)].index
+
+    df_overlap = df_tmp[df_tmp["strata"].isin(valid_strata)].copy()
+
+    print("  -> df_overlap shape :", df_overlap.shape)
+
+    # On demande au moins quelques centaines d'observations pour que ce soit exploitable
+    if len(df_overlap) > 1000 and df_overlap["treated"].nunique() == 2:
+        chosen_covs = covs
+        psm_overlap = df_overlap
+        print("  ✅ Covariables retenues pour le PSM :", chosen_covs)
+        break
+
+if chosen_covs is None or psm_overlap is None or len(psm_overlap) == 0:
+    print(
+        "\n⚠️ Aucun set de covariables parmi ceux testés ne permet d'obtenir "
+        "un échantillon avec strates communes pré-IA / IA suffisamment grand.\n"
+        "   → PSM strict non faisable sur cette base (avec ces covariables).\n"
+        "   → Tu pourras documenter cela dans la thèse et rester sur les logits/méthodes déjà en place."
+    )
+else:
+    print("\nÉchantillon retenu pour le PSM :", psm_overlap.shape)
+    print("Covariables finales utilisées pour le PSM :", chosen_covs)
+
+    # 8.2. Encodage des covariables et estimation du score de propension
+    # ------------------------------------------------------------------
+
+    X_cov = pd.get_dummies(psm_overlap[chosen_covs], drop_first=True)
+    y_treated = psm_overlap["treated"]
+
+    psm_logit = LogisticRegression(max_iter=1000, n_jobs=-1)
+    psm_logit.fit(X_cov, y_treated)
+
+    psm_overlap["pscore"] = psm_logit.predict_proba(X_cov)[:, 1]
+
+    print("\nRésumé des scores de propension (échantillon overlap) :")
+    print(psm_overlap["pscore"].describe())
+
+    # 8.3. Restriction au support commun en p-score
+    # ---------------------------------------------
+
+    treated = psm_overlap[psm_overlap["treated"] == 1].copy()
+    control = psm_overlap[psm_overlap["treated"] == 0].copy()
+
+    min_t, max_t = treated["pscore"].min(), treated["pscore"].max()
+    min_c, max_c = control["pscore"].min(), control["pscore"].max()
+
+    lower = max(min_t, min_c)
+    upper = min(max_t, max_c)
+
+    print(f"\nSupport pré-IA (overlap covariables) : [{min_c:.3f}, {max_c:.3f}]")
+    print(f"Support IA     (overlap covariables) : [{min_t:.3f}, {max_t:.3f}]")
+    print(f"Support commun théorique en p-score  : [{lower:.3f}, {upper:.3f}]")
+
+    if lower >= upper:
+        print(
+            "⚠️ Même après choix des covariables et strates communes, "
+            "le support commun en p-score est vide.\n"
+            "   → PSM non faisable ; seul constat à documenter."
+        )
+    else:
+        treated_cs = treated[
+            (treated["pscore"] >= lower) & (treated["pscore"] <= upper)
+        ].copy()
+        control_cs = control[
+            (control["pscore"] >= lower) & (control["pscore"] <= upper)
+        ].copy()
+
+        print("Treated (common support p-score) :", treated_cs.shape)
+        print("Control (common support p-score) :", control_cs.shape)
+
+        # 8.4. Matching 1:1 par plus proche voisin
+        # ----------------------------------------
+
+        nbrs = NearestNeighbors(n_neighbors=1, algorithm="ball_tree")
+        nbrs.fit(control_cs[["pscore"]])
+
+        distances, indices = nbrs.kneighbors(treated_cs[["pscore"]])
+        control_matched = control_cs.iloc[indices.flatten()].copy()
+
+        treated_cs = treated_cs.reset_index(drop=True)
+        control_matched = control_matched.reset_index(drop=True)
+
+        matched_df = pd.concat([treated_cs, control_matched], axis=0)
+        print("\nÉchantillon apparié PSM – shape :", matched_df.shape)
+        print(matched_df[["era", "pscore"]].groupby("era").describe())
+
+        # 8.5. Sauvegarde éventuelle pour analyses ultérieures (descriptifs, logits, ML)
+        # -----------------------------------------------------------------------------
+
+        out_dir = os.path.join(BASE_DIR, "tables")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # On harmonise les types avant écriture parquet
+        matched_df_clean = matched_df.copy()
+
+        # Toutes les colonnes objet → string (PyArrow gère bien ça)
+        obj_cols = matched_df_clean.select_dtypes(include="object").columns
+        print("\nColonnes converties en string avant sauvegarde parquet :", list(obj_cols))
+
+        for col in obj_cols:
+            matched_df_clean[col] = matched_df_clean[col].astype("string")
+
+        matched_path = os.path.join(BASE_DIR, "hmda_psm_matched_preIA_IA.parquet")
+        matched_df_clean.to_parquet(matched_path, index=False)
+
+        print("\nÉchantillon apparié sauvegardé dans :", matched_path)
+
+
+Jeux de covariables possibles (après vérification des colonnes) :
+  - ['loan_purpose', 'loan_type', 'hoepa_status', 'state_code']
+  - ['loan_purpose', 'loan_type', 'state_code']
+  - ['loan_purpose', 'loan_type']
+  - ['state_code']
+
+psm_df shape (échantillon combiné) : (600000, 20)
+
+--- Test des covariables : ['loan_purpose', 'loan_type', 'hoepa_status', 'state_code'] ---
+  -> df_overlap shape : (0, 21)
+
+--- Test des covariables : ['loan_purpose', 'loan_type', 'state_code'] ---
+  -> df_overlap shape : (0, 21)
+
+--- Test des covariables : ['loan_purpose', 'loan_type'] ---
+  -> df_overlap shape : (300645, 21)
+  ✅ Covariables retenues pour le PSM : ['loan_purpose', 'loan_type']
+
+Échantillon retenu pour le PSM : (300645, 21)
+Covariables finales utilisées pour le PSM : ['loan_purpose', 'loan_type']
+
+Résumé des scores de propension (échantillon overlap) :
+count    300645.000000
+mean          0.557154
+std           0.050522
+min           0.374526
+25%           0.551458
+50%           0.586885
+75%           0.586885
+max           0.586885
+Name: pscore, dtype: float64
+
+Support pré-IA (overlap covariables) : [0.375, 0.587]
+Support IA     (overlap covariables) : [0.375, 0.587]
+Support commun théorique en p-score  : [0.375, 0.587]
+Treated (common support p-score) : (167520, 22)
+Control (common support p-score) : (133125, 22)
+
+Échantillon apparié PSM – shape : (335040, 22)
+          pscore                                                                     
+           count      mean      std       min       25%       50%       75%       max
+era                                                                                  
+IA      167520.0  0.561732  0.04662  0.374526  0.551458  0.586885  0.586885  0.586885
+pre_IA  167520.0  0.561732  0.04662  0.374526  0.551458  0.586885  0.586885  0.586885
+
+Colonnes converties en string avant sauvegarde parquet : ['state_code', 'era', 'census_tract', 'geoid_tract', 'derived_ethnicity', 'derived_race', 'strata']
+
+Échantillon apparié sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\hmda_psm_matched_preIA_IA.parquet
+
+
+# 8.X. Exploitation de l'échantillon apparié PSM
+# ----------------------------------------------
+# - PSM.1 : balance des covariables avant / après matching
+# - PSM.2 : logit d'approbation sur l'échantillon apparié
+
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+# 1) Rechargement de l'échantillon apparié
+matched_path = os.path.join(BASE_DIR, "hmda_psm_matched_preIA_IA.parquet")
+matched_df = pd.read_parquet(matched_path)
+
+print("matched_df shape :", matched_df.shape)
+print(matched_df[["era", "loan_purpose", "loan_type"]].head())
+
+# 2) Préparation d'un échantillon "avant PSM" comparable
+#    (même variables, sur l'échantillon psm_df déjà construit dans la cellule précédente)
+
+before_df = psm_df.copy()  # psm_df vient de la cellule PSM précédente
+
+# 2.1. Tableau PSM.1 – distribution des covariables avant / après matching
+# ------------------------------------------------------------------------
+
+def covariate_balance_table(df, label):
+    """Construit un petit tableau de répartition pour loan_purpose et loan_type par era."""
+    tab_lp = (
+        df.pivot_table(
+            index="loan_purpose",
+            columns="era",
+            values="treated",  # n'importe quelle colonne numérique
+            aggfunc="count"
+        )
+        .fillna(0)
+    )
+    tab_lp["variable"] = "loan_purpose"
+    tab_lp = tab_lp.reset_index().rename_axis(None, axis=1)
+
+    tab_lt = (
+        df.pivot_table(
+            index="loan_type",
+            columns="era",
+            values="treated",
+            aggfunc="count"
+        )
+        .fillna(0)
+    )
+    tab_lt["variable"] = "loan_type"
+    tab_lt = tab_lt.reset_index().rename_axis(None, axis=1)
+
+    tab = pd.concat([tab_lp, tab_lt], axis=0)
+
+    # Totaux par era pour transformer en parts
+    era_cols = [c for c in tab.columns if c in ["pre_IA", "IA"]]
+    for c in era_cols:
+        total_c = tab[c].sum()
+        if total_c > 0:
+            tab[c + "_share"] = tab[c] / total_c
+
+    tab["sample"] = label
+    return tab
+
+balance_before = covariate_balance_table(before_df, label="before_psm")
+balance_after  = covariate_balance_table(matched_df, label="after_psm")
+
+balance_psm = pd.concat([balance_before, balance_after], axis=0)
+
+# Sauvegarde pour Table PSM.1
+out_dir = os.path.join(BASE_DIR, "tables")
+os.makedirs(out_dir, exist_ok=True)
+
+balance_path = os.path.join(out_dir, "psm1_balance_before_after.csv")
+balance_psm.to_csv(balance_path, index=False)
+
+print("\nTable PSM.1 (balance covariables) sauvegardée dans :", balance_path)
+display(balance_psm.head(20))
+
+# 3) Tableau PSM.2 – logit d'approbation sur l'échantillon apparié
+# ----------------------------------------------------------------
+# Hypothèse : la variable d'intérêt est `approved` (0/1)
+
+if "approved" in matched_df.columns:
+    print("\nEstimation logit d'approbation sur l'échantillon apparié...")
+
+    # On code era en dummy IA (1) vs pré_IA (0)
+    matched_df["era_IA"] = (matched_df["era"] == "IA").astype(int)
+
+    # Modèle logit simple : approved ~ era_IA
+    logit_formula = "approved ~ era_IA"
+    logit_model = smf.logit(formula=logit_formula, data=matched_df).fit(disp=0)
+
+    print(logit_model.summary())
+
+    # Extraction rapide des coefficients pour Table PSM.2
+    logit_res = logit_model.summary2().tables[1].reset_index()
+    logit_res.rename(columns={"index": "variable"}, inplace=True)
+
+    logit_path = os.path.join(out_dir, "psm2_logit_approved_matched.csv")
+    logit_res.to_csv(logit_path, index=False)
+
+    print("\nTable PSM.2 (logit sur échantillon apparié) sauvegardée dans :", logit_path)
+    display(logit_res)
+else:
+    print(
+        "\n⚠️ La variable 'approved' n'est pas présente dans matched_df.\n"
+        "   → Impossible de calculer le logit PSM.2 tel quel ; vérifie le nom de la variable de résultat."
+    )
+
+matched_df shape : (335040, 22)
+  era  loan_purpose  loan_type
+0  IA           1.0        1.0
+1  IA           1.0        1.0
+2  IA           1.0        1.0
+3  IA           1.0        1.0
+4  IA           2.0        1.0
+
+Table PSM.1 (balance covariables) sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\psm1_balance_before_after.csv
+loan_purpose	IA	pre_IA	variable	loan_type	IA_share	pre_IA_share	sample
+0	1.0	147925.0	109894.0	loan_purpose	NaN	0.246542	0.183157	before_psm
+1	2.0	19595.0	24626.0	loan_purpose	NaN	0.032658	0.041043	before_psm
+2	3.0	0.0	165480.0	loan_purpose	NaN	0.000000	0.275800	before_psm
+3	4.0	16604.0	0.0	loan_purpose	NaN	0.027673	0.000000	before_psm
+4	5.0	3715.0	0.0	loan_purpose	NaN	0.006192	0.000000	before_psm
+5	31.0	61558.0	0.0	loan_purpose	NaN	0.102597	0.000000	before_psm
+6	32.0	50603.0	0.0	loan_purpose	NaN	0.084338	0.000000	before_psm
+0	NaN	245787.0	240745.0	loan_type	1.0	0.409645	0.401242	before_psm
+1	NaN	40374.0	51142.0	loan_type	2.0	0.067290	0.085237	before_psm
+2	NaN	13839.0	6672.0	loan_type	3.0	0.023065	0.011120	before_psm
+3	NaN	0.0	1441.0	loan_type	4.0	0.000000	0.002402	before_psm
+0	1.0	147925.0	147925.0	loan_purpose	NaN	0.441514	0.441514	after_psm
+1	2.0	19595.0	19595.0	loan_purpose	NaN	0.058486	0.058486	after_psm
+0	NaN	134661.0	134661.0	loan_type	1.0	0.401925	0.401925	after_psm
+1	NaN	25755.0	25755.0	loan_type	2.0	0.076871	0.076871	after_psm
+2	NaN	7104.0	7104.0	loan_type	3.0	0.021203	0.021203	after_psm
+
+Estimation logit d'approbation sur l'échantillon apparié...
+                           Logit Regression Results                           
+==============================================================================
+Dep. Variable:               approved   No. Observations:               335040
+Model:                          Logit   Df Residuals:                   335038
+Method:                           MLE   Df Model:                            1
+Date:                Thu, 27 Nov 2025   Pseudo R-squ.:                 0.06676
+Time:                        16:52:08   Log-Likelihood:            -2.1212e+05
+converged:                       True   LL-Null:                   -2.2729e+05
+Covariance Type:            nonrobust   LLR p-value:                     0.000
+==============================================================================
+                 coef    std err          z      P>|z|      [0.025      0.975]
+------------------------------------------------------------------------------
+Intercept     -1.0081      0.006   -182.614      0.000      -1.019      -0.997
+era_IA         1.2546      0.007    169.604      0.000       1.240       1.269
+==============================================================================
+
+Table PSM.2 (logit sur échantillon apparié) sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\psm2_logit_approved_matched.csv
+variable	Coef.	Std.Err.	z	P>|z|	[0.025	0.975]
+0	Intercept	-1.008124	0.005521	-182.614024	0.0	-1.018944	-0.997304
+1	era_IA	1.254588	0.007397	169.603549	0.0	1.240090	1.269087
+
+
+1. Analyse détaillée de PSM.1 – Balance des covariables avant / après appariement
+1.1. Objectif statistique du PSM
+Le Propensity Score Matching (PSM) vise à rendre comparables les dossiers observés en période pré-IA et IA, en équilibrant les distributions des caractéristiques observables.
+
+Dans cette étude, l’appariement repose sur deux variables clés :
+
+loan_purpose (motif du prêt)
+loan_type (type de produit de crédit)
+Ces variables sont observables dans les deux périodes et structurent fortement les décisions d’octroi.
+
+1.2. Déséquilibre structurel avant PSM
+Avant appariement, les portefeuilles pré-IA et IA sont fortement déséquilibrés.
+
+Tableau – Répartition des loan_purpose avant PSM
+Code	IA (nb)	Pré-IA (nb)	Part IA	Part Pré-IA	Interprétation
+1	147 925	109 894	24.65 %	18.32 %	Sur-représenté en IA
+2	19 595	24 626	3.27 %	4.10 %	Légèrement plus fréquent en pré-IA
+3	0	165 480	0.00 %	27.58 %	Exclusif à la période pré-IA
+4	16 604	0	2.77 %	0.00 %	Exclusif à la période IA
+5	3 715	0	0.62 %	0.00 %	Exclusif à la période IA
+31	61 558	0	10.26 %	0.00 %	Exclusif à la période IA
+32	50 603	0	8.43 %	0.00 %	Exclusif à la période IA
+Lecture académique :
+
+Avant PSM, plusieurs catégories de prêts n’existent que dans une seule période.
+Cela empêche toute comparaison causale directe entre pré-IA et IA, car les différences observées peuvent simplement refléter une transformation structurelle des portefeuilles plutôt qu’un effet technologique.
+
+Tableau – Répartition des loan_type avant PSM
+Code	IA (nb)	Pré-IA (nb)	Part IA	Part Pré-IA	Lecture
+1	245 787	240 745	40.96 %	40.12 %	Répartition proche
+2	40 374	51 142	6.73 %	8.52 %	Plus fréquent en pré-IA
+3	13 839	6 672	2.31 %	1.11 %	Sur-représenté en IA
+4	0	1 441	0.00 %	0.24 %	Exclusif à la période pré-IA
+1.3. Résultats après PSM : équilibre parfait
+Après appariement, seuls les profils communs aux deux périodes sont conservés.
+
+Tableau – Répartition des covariables après PSM
+Variable	Code	IA (nb)	Pré-IA (nb)	Part IA	Part Pré-IA
+loan_purpose	1	147 925	147 925	44.15 %	44.15 %
+loan_purpose	2	19 595	19 595	5.85 %	5.85 %
+loan_type	1	134 661	134 661	40.19 %	40.19 %
+loan_type	2	25 755	25 755	7.69 %	7.69 %
+loan_type	3	7 104	7 104	2.12 %	2.12 %
+Conclusion méthodologique
+L’appariement par score de propension a permis de construire deux sous-échantillons strictement comparables.
+Les distributions de loan_purpose et loan_type sont parfaitement identiques entre les périodes pré-IA et IA.
+Cette étape neutralise le biais de composition des portefeuilles et autorise une inférence causale plus crédible.
+
+2. Analyse détaillée de PSM.2 – Logit d’approbation sur échantillon apparié
+2.1. Résultats du modèle logistique
+Tableau – Estimation logit
+Variable	Coefficient	Erreur standard	z-stat	p-value
+Intercept	−1.0081	0.0055	−182.61	< 0.001
+era_IA	+1.2546	0.0074	169.60	< 0.001
+2.2. Interprétation probabiliste
+Probabilité de base (période pré-IA)
+é
+ 
+
+Indicateur	Valeur
+Probabilité d’approbation (pré-IA)	26,7 %
+2.3. Effet de l’ère IA
+Odds ratio
+
+Indicateur	Résultat
+Odds Ratio	3,51
+Direction de l’effet	Positif
+Significativité	p < 0,001
+2.4. Interprétation académique prête à intégrer
+Sur l’échantillon apparié par score de propension, le modèle logistique met en évidence un effet fortement positif de l’ère IA sur la probabilité d’approbation (β = 1,255 ; p < 0,001).
+En termes d’odds ratio, les dossiers traités durant la période IA présentent une probabilité d’approbation environ 3,5 fois plus élevée que les dossiers comparables traités en période pré-IA.
+Ce résultat persiste après correction du biais de sélection par PSM, renforçant l’hypothèse d’un changement structurel de régime décisionnel.
+
+2.5. Lecture économique approfondie
+Niveau	Interprétation
+Statistique	Effet stable, précis et hautement significatif
+Méthodologique	Résultat robuste après équilibrage des portefeuilles
+Économique	Tolérance accrue au risque ou meilleure discrimination du risque par l’IA
+Institutionnel	Transition vers des systèmes de décision data-driven
+Conclusion générale prête à insérer
+Même après correction du biais de composition des portefeuilles par PSM, la période IA demeure associée à une probabilité significativement plus élevée d’approbation des dossiers.
+Ce signal ne peut plus être attribué à de simples différences de structure des demandes, ce qui suggère un effet propre du changement de paradigme technologique dans les processus d’octroi du crédit.
+
+# 8.X – PSM.3 : Logits enrichis et par sous-groupes (race / revenu)
+
+import os
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+# -------------------------------------------------------------------
+# 1) Rechargement de l'échantillon apparié PSM
+# -------------------------------------------------------------------
+
+matched_path = os.path.join(BASE_DIR, "hmda_psm_matched_preIA_IA.parquet")
+matched_df = pd.read_parquet(matched_path)
+
+print("matched_df shape :", matched_df.shape)
+print("Colonnes disponibles :", matched_df.columns.tolist()[:40])
+
+# Variable de traitement : era_IA = 1 si IA, 0 si pré-IA
+matched_df["era_IA"] = (matched_df["era"] == "IA").astype(int)
+
+# Dossier de sortie pour les tableaux
+tables_dir = os.path.join(BASE_DIR, "tables")
+os.makedirs(tables_dir, exist_ok=True)
+
+# -------------------------------------------------------------------
+# 2) PSM.3a – Logit enrichi avec contrôles loan_purpose / loan_type
+# -------------------------------------------------------------------
+# Modèle : approved ~ era_IA + C(loan_purpose) + C(loan_type)
+
+if "approved" in matched_df.columns:
+    print("\n[PSM.3a] Estimation logit enrichi avec contrôles...")
+
+    formula_psm3a = "approved ~ era_IA + C(loan_purpose) + C(loan_type)"
+    logit_psm3a = smf.logit(formula=formula_psm3a, data=matched_df).fit(disp=0)
+
+    print(logit_psm3a.summary())
+
+    psm3a_res = logit_psm3a.summary2().tables[1].reset_index()
+    psm3a_res.rename(columns={"index": "variable"}, inplace=True)
+
+    psm3a_path = os.path.join(tables_dir, "psm3a_logit_approved_controls.csv")
+    psm3a_res.to_csv(psm3a_path, index=False)
+
+    print("\n[PSM.3a] Tableau sauvegardé dans :", psm3a_path)
+else:
+    print("\n⚠️ Impossible de calculer PSM.3a : la colonne 'approved' est absente de matched_df.")
+
+
+# -------------------------------------------------------------------
+# 3) PSM.3b – Logit par sous-groupes de race (si available)
+# -------------------------------------------------------------------
+# Modèle par race : approved ~ era_IA (échantillon apparié, restreint à chaque race)
+
+psm3b_rows = []
+
+if "approved" in matched_df.columns and "derived_race" in matched_df.columns:
+    print("\n[PSM.3b] Estimation logit par sous-groupes de race...")
+
+    # On garde uniquement les valeurs non nulles de derived_race
+    race_values = (
+        matched_df["derived_race"]
+        .dropna()
+        .astype(str)
+        .value_counts()
+    )
+
+    print("Races considérées pour PSM.3b :", race_values.to_dict())
+
+    # On peut ignorer les catégories avec très peu d'observations
+    MIN_N = 1000
+
+    for race_val, n_race in race_values.items():
+        if n_race < MIN_N:
+            print(f"  - Race '{race_val}' ignorée (n={n_race} < {MIN_N})")
+            continue
+
+        df_sub = matched_df[matched_df["derived_race"].astype(str) == race_val].copy()
+
+        # Vérifier qu'on a bien les deux périodes
+        if df_sub["era_IA"].nunique() < 2:
+            print(f"  - Race '{race_val}' ignorée (une seule ère présente)")
+            continue
+
+        print(f"  - Estimation pour race '{race_val}' (n={len(df_sub)})...")
+
+        try:
+            model_race = smf.logit("approved ~ era_IA", data=df_sub).fit(disp=0)
+            coef_table = model_race.summary2().tables[1]
+
+            # On récupère juste la ligne era_IA
+            if "era_IA" in coef_table.index:
+                row = coef_table.loc["era_IA"].to_dict()
+                row["race"] = race_val
+                psm3b_rows.append(row)
+        except Exception as e:
+            print(f"    ⚠️ Problème pour race '{race_val}' :", e)
+
+    if psm3b_rows:
+        psm3b_df = pd.DataFrame(psm3b_rows)
+        # Renommer les colonnes pour plus de clarté
+        psm3b_df = psm3b_df.rename(
+            columns={
+                "Coef.": "coef",
+                "Std.Err.": "std_err",
+                "P>|z|": "p_value",
+                "[0.025": "ci_low",
+                "0.975]": "ci_high",
+            }
+        )
+        psm3b_path = os.path.join(tables_dir, "psm3b_logit_approved_by_race.csv")
+        psm3b_df.to_csv(psm3b_path, index=False)
+        print("\n[PSM.3b] Tableau sauvegardé dans :", psm3b_path)
+        display(psm3b_df)
+    else:
+        print("\n[PSM.3b] Aucun sous-groupe de race exploitable pour l'estimation.")
+else:
+    print("\n⚠️ PSM.3b non calculé : colonnes 'approved' ou 'derived_race' absentes.")
+
+
+# -------------------------------------------------------------------
+# 4) PSM.3c – Logit par terciles de revenu de zone (acs_median_income)
+# -------------------------------------------------------------------
+# Modèle par tercile de revenu : approved ~ era_IA
+
+psm3c_rows = []
+
+if "approved" in matched_df.columns and "acs_median_income" in matched_df.columns:
+    print("\n[PSM.3c] Estimation logit par terciles de revenu (acs_median_income)...")
+
+    df_income = matched_df.dropna(subset=["acs_median_income"]).copy()
+
+    # Construction de terciles de revenu
+    df_income["income_tercile"] = pd.qcut(
+        df_income["acs_median_income"],
+        q=3,
+        labels=["low", "mid", "high"]
+    )
+
+    tercile_counts = df_income["income_tercile"].value_counts()
+    print("Terciles de revenu (effectifs) :", tercile_counts.to_dict())
+
+    for tercile in ["low", "mid", "high"]:
+        df_sub = df_income[df_income["income_tercile"] == tercile].copy()
+        n_sub = len(df_sub)
+
+        if n_sub < 1000:
+            print(f"  - Tercile '{tercile}' ignoré (n={n_sub} < 1000)")
+            continue
+
+        if df_sub["era_IA"].nunique() < 2:
+            print(f"  - Tercile '{tercile}' ignoré (une seule ère présente)")
+            continue
+
+        print(f"  - Estimation pour tercile '{tercile}' (n={n_sub})...")
+
+        try:
+            model_inc = smf.logit("approved ~ era_IA", data=df_sub).fit(disp=0)
+            coef_table = model_inc.summary2().tables[1]
+
+            if "era_IA" in coef_table.index:
+                row = coef_table.loc["era_IA"].to_dict()
+                row["income_tercile"] = tercile
+                psm3c_rows.append(row)
+        except Exception as e:
+            print(f"    ⚠️ Problème pour le tercile '{tercile}' :", e)
+
+    if psm3c_rows:
+        psm3c_df = pd.DataFrame(psm3c_rows)
+        psm3c_df = psm3c_df.rename(
+            columns={
+                "Coef.": "coef",
+                "Std.Err.": "std_err",
+                "P>|z|": "p_value",
+                "[0.025": "ci_low",
+                "0.975]": "ci_high",
+            }
+        )
+        psm3c_path = os.path.join(tables_dir, "psm3c_logit_approved_by_income_tercile.csv")
+        psm3c_df.to_csv(psm3c_path, index=False)
+        print("\n[PSM.3c] Tableau sauvegardé dans :", psm3c_path)
+        display(psm3c_df)
+    else:
+        print("\n[PSM.3c] Aucun tercile de revenu exploitable pour l'estimation.")
+else:
+    print("\n⚠️ PSM.3c non calculé : colonnes 'approved' ou 'acs_median_income' absentes.")
+
+
+matched_df shape : (335040, 22)
+Colonnes disponibles : ['action_taken', 'applicant_sex', 'county_code', 'hoepa_status', 'lien_status', 'loan_purpose', 'loan_type', 'preapproval', 'purchaser_type', 'rate_spread', 'state_code', 'year', 'approved', 'era', 'census_tract', 'geoid_tract', 'loan_amount', 'derived_ethnicity', 'derived_race', 'treated', 'strata', 'pscore']
+
+[PSM.3a] Estimation logit enrichi avec contrôles...
+                           Logit Regression Results                           
+==============================================================================
+Dep. Variable:               approved   No. Observations:               335040
+Model:                          Logit   Df Residuals:                   335035
+Method:                           MLE   Df Model:                            4
+Date:                Thu, 27 Nov 2025   Pseudo R-squ.:                  0.1962
+Time:                        17:04:19   Log-Likelihood:            -1.8269e+05
+converged:                       True   LL-Null:                   -2.2729e+05
+Covariance Type:            nonrobust   LLR p-value:                     0.000
+==========================================================================================
+                             coef    std err          z      P>|z|      [0.025      0.975]
+------------------------------------------------------------------------------------------
+Intercept                 -1.7525      0.007   -235.247      0.000      -1.767      -1.738
+C(loan_purpose)[T.2.0]     2.0543      0.013    155.790      0.000       2.028       2.080
+C(loan_type)[T.2.0]        2.1845      0.012    181.069      0.000       2.161       2.208
+C(loan_type)[T.3.0]       -0.1319      0.020     -6.462      0.000      -0.172      -0.092
+era_IA                     1.5458      0.009    180.242      0.000       1.529       1.563
+==========================================================================================
+
+[PSM.3a] Tableau sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\psm3a_logit_approved_controls.csv
+
+[PSM.3b] Estimation logit par sous-groupes de race...
+Races considérées pour PSM.3b : {'White': 101636, 'Race Not Available': 35345, 'Asian': 15225, 'Black or African American': 11277, 'Joint': 2978, 'American Indian or Alaska Native': 456, 'Native Hawaiian or Other Pacific Islander': 324, '2 or more minority races': 208, 'Free Form Text Only': 71}
+  - Race 'White' ignorée (une seule ère présente)
+  - Race 'Race Not Available' ignorée (une seule ère présente)
+  - Race 'Asian' ignorée (une seule ère présente)
+  - Race 'Black or African American' ignorée (une seule ère présente)
+  - Race 'Joint' ignorée (une seule ère présente)
+  - Race 'American Indian or Alaska Native' ignorée (n=456 < 1000)
+  - Race 'Native Hawaiian or Other Pacific Islander' ignorée (n=324 < 1000)
+  - Race '2 or more minority races' ignorée (n=208 < 1000)
+  - Race 'Free Form Text Only' ignorée (n=71 < 1000)
+
+[PSM.3b] Aucun sous-groupe de race exploitable pour l'estimation.
+
+⚠️ PSM.3c non calculé : colonnes 'approved' ou 'acs_median_income' absentes.
+3. Analyse détaillée de PSM.3 – Logits enrichis et par sous-groupes
+3.1. PSM.3a – Logit enrichi avec contrôles loan_purpose et loan_type
+3.1.1. Spécification du modèle
+Sur l’échantillon apparié PSM (335 040 observations), tu estimes le modèle suivant :
+
+𝟙𝟙𝟙
+
+avec comme catégories de référence :
+
+loan_purpose = 1 (catégorie de base),
+loan_type = 1 (type de prêt de base),
+era_IA = 0 pour la période pré-IA.
+La variable dépendante approved vaut 1 si le dossier est approuvé, 0 sinon.
+
+3.1.2. Résultats du logit enrichi (PSM.3a)
+Rappel des coefficients estimés :
+
+Variable	Coefficient β	Erreur std.	z-stat	p-value
+Intercept	-1.7525	0.0070	-235.25	< 0.001
+C(loan_purpose)[T.2.0]	+2.0543	0.0132	155.79	< 0.001
+C(loan_type)[T.2.0]	+2.1845	0.0121	181.07	< 0.001
+C(loan_type)[T.3.0]	-0.1319	0.0204	-6.46	< 0.001
+era_IA	+1.5458	0.0086	180.24	< 0.001
+On peut traduire ces coefficients en odds ratios (OR) :
+
+
+Variable	Coefficient β	Odds Ratio (e^{\beta})	Lecture
+Intercept	-1.7525	≈ 0.17	Niveau d’odds en pré-IA, pour le profil de référence
+C(loan_purpose)[T.2.0]	+2.0543	≈ 7.80	Les dossiers de type 2 ont ~7,8 fois plus de chances (odds) d’être approuvés que ceux de type 1
+C(loan_type)[T.2.0]	+2.1845	≈ 8.89	Les loan_type = 2 ont ~8,9 fois plus d’odds d’approbation que loan_type = 1
+C(loan_type)[T.3.0]	-0.1319	≈ 0.88	Les loan_type = 3 ont des odds ~12 % plus faibles que loan_type = 1
+era_IA	+1.5458	≈ 4.69	L’ère IA multiplie les odds d’approbation par ≈ 4,7 à caractéristiques identiques
+3.1.3. Probabilités associées au profil de référence
+Pour un dossier :
+
+en période pré-IA (era_IA = 0),
+avec loan_purpose = 1,
+et loan_type = 1,
+la probabilité d’approbation vaut :
+
+é
+ 
+
+soit environ 14,8 %.
+
+Pour le même profil en période IA (era_IA = 1) :
+
+ 
+
+soit environ 44,9 %.
+
+Profil	Formule (logit)	Probabilité d’approbation
+Référence pré-IA (purpose=1, type=1)	(\sigma(-1.7525))	≈ 14,8 %
+Même profil en IA	(\sigma(-1.7525 + 1.5458))	≈ 44,9 %
+Interprétation clé (PSM.3a)
+À loan_purpose et loan_type fixés, passer de la période pré-IA à l’ère IA multiplie les odds d’approbation par environ 4,7, et fait passer la probabilité d’approbation du profil de référence d’environ 15 % à 45 %.
+Autrement dit, même à portefeuille de produits identique, l’ère IA est associée à un niveau d’approbation nettement plus élevé.
+
+3.1.4. Rôle des contrôles loan_purpose et loan_type
+Les coefficients associés aux contrôles montrent que :
+
+Certains motifs de prêt (loan_purpose = 2) ont une probabilité beaucoup plus élevée d’être approuvés que la catégorie de référence (loan_purpose = 1), avec un OR ≈ 7,8.
+Certains types de prêt (loan_type = 2) sont également beaucoup plus favorisés que loan_type = 1 (OR ≈ 8,9).
+D’autres types (loan_type = 3) ont un léger désavantage (OR ≈ 0,88).
+En incluant ces variables dans le modèle PSM.3a, tu montres que l’effet IA (OR ≈ 4,69) ne se réduit pas à un simple changement dans la composition porteuse/produits, mais reste massif et significatif une fois ces dimensions contrôlées.
+
+3.2. PSM.3b – Logits par sous-groupes de race : impossibilité empirique
+Le bloc PSM.3b tentait d’estimer, pour chaque modalité de derived_race, un modèle simplifié :
+
+
+restreint aux individus appartenant à une race donnée ( r ).
+
+Les effectifs par race dans l’échantillon apparié sont les suivants :
+
+derived_race	n	Commentaire
+White	101 636	Une seule ère présente
+Race Not Available	35 345	Une seule ère présente
+Asian	15 225	Une seule ère présente
+Black or African American	11 277	Une seule ère présente
+Joint	2 978	Une seule ère présente
+American Indian or Alaska Native	456	n < 1 000
+Native Hawaiian or Other Pacific Islander	324	n < 1 000
+2 or more minority races	208	n < 1 000
+Free Form Text Only	71	n < 1 000
+Le script te retourne :
+
+pour les grandes catégories (White, Race Not Available, Asian, Black or African American, Joint) :
+« une seule ère présente » → pas de variabilité de era_IA dans le sous-échantillon,
+
+pour les petites minorités :
+effectifs insuffisants (n < 1 000).
+
+Conséquence statistique :
+
+Quand une race donnée n’est observée que dans une seule ère (pré-IA ou IA mais pas les deux), il est impossible d’identifier un coefficient (\beta_{r,\text{IA}}) : le modèle est parfaitement colinéaire.
+Même avec PSM, l’appariement sur loan_purpose et loan_type aboutit à un échantillon où chaque race se concentre dans une seule période (ou presque), ce qui prive l’estimation intra-groupe de variation temporelle exploitable.
+Formulation pour la thèse
+Les tentatives d’estimation de modèles PSM spécifiques par race (PSM.3b) se heurtent à une contrainte empirique forte : dans l’échantillon apparié, la plupart des catégories de derived_race ne sont observées que dans une seule période (pré-IA ou IA), ou avec des effectifs trop faibles.
+En l’absence de variabilité suffisante de era_IA au sein des sous-groupes raciaux, l’effet de l’ère IA ne peut pas être identifié séparément par race.
+L’estimation PSM doit donc être interprétée comme un effet moyen agrégé sur l’ensemble des races, et non comme un effet spécifique à chaque groupe racial.
+
+3.3. PSM.3c – Logits par terciles de revenu (acs_median_income) : limite de données
+Le bloc PSM.3c visait à construire des terciles de revenu de zone via acs_median_income et à estimer :
+
+
+pour chaque tercile de revenu ( t \in {\text{low, mid, high}} ).
+
+Or le script retourne :
+
+⚠️ PSM.3c non calculé : colonnes 'approved' ou 'acs_median_income' absentes.
+
+Dans ton matched_df, tu disposes de :
+
+approved (variable dépendante),
+mais pas de colonne acs_median_income : cette information ACS n’a pas été fusionnée au moment de la construction de l’échantillon PSM (ou a été filtrée auparavant).
+Formulation pour la thèse
+La déclinaison des modèles PSM par terciles de revenu de zone (PSM.3c) n’a pas pu être implémentée dans la version finale de l’échantillon apparié, faute de variable acs_median_income disponible dans les données PSM.
+L’analyse différentielle par niveau de revenu reste donc une piste pour des extensions ultérieures, à condition de reconstruire un échantillon apparié incluant explicitement les variables ACS.
+
+3.4. Synthèse PSM.3 à insérer
+PSM.3a montre que, même en contrôlant explicitement pour le motif et le type de prêt, l’ère IA est associée à une augmentation massive des odds d’approbation (OR ≈ 4,69), faisant passer, pour le profil de base, la probabilité d’approbation d’environ 15 % à 45 %.
+PSM.3b ne peut pas isoler un effet IA par race, car l’échantillon apparié ne contient pas suffisamment de variabilité temporelle au sein de chaque groupe racial : chaque race se concentre quasi intégralement dans une seule ère.
+PSM.3c n’est pas estimable dans cette version des données, la variable de revenu de zone acs_median_income n’étant pas présente dans l’échantillon PSM final.
+En résumé, PSM.3 confirme la robustesse de l’effet moyen de l’ère IA sur la probabilité d’approbation, mais met en lumière des limites de données et de support commun qui rendent délicate la décomposition de cet effet par sous-groupes socio-démographiques (race, revenu).
+
+"

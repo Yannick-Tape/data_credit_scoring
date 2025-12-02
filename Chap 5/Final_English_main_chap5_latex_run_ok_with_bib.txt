@@ -1,0 +1,407 @@
+\documentclass[12pt,oneside]{report}
+
+% ================== PACKAGES ==================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{csquotes}
+
+% ---------- ASPEN DOCTORAL FORMAT ----------
+\usepackage[margin=1.2in]{geometry}
+\usepackage{setspace}
+\doublespacing
+
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}} % check mark
+\newcommand{\xmark}{\ding{55}} % cross mark (if needed)
+
+\setlength{\parskip}{1em}
+
+% Aspen-style headings
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{3.5ex plus 1ex minus .2ex}{2.3ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{3ex plus 1ex minus .22ex}{1.5ex plus .2ex}
+\titlespacing*{\subsubsection}{0pt}{2.5ex plus 1ex minus .22ex}{1ex plus .2ex}
+
+% APA7
+\usepackage{apacite}
+
+% =====================================================
+%                   TITLE PAGE
+% =====================================================
+\begin{document}
+
+\begin{titlepage}
+    \begin{center}
+        \vspace*{3cm}
+        {\Large \textbf{Aspen University}}\\[1.2cm]
+        {\Large \textbf{AI-Driven Fair Creditworthiness and Credit Scoring:}}\\
+        {\Large \textbf{A Two-Decade Analysis in the Tri-State Area (2004--2024)}}\\[1.2cm]
+        {\large \textbf{NAPO Tchin}}\\[0.8cm]
+        {\large \textbf{January 2026}}\\
+    \end{center}
+\end{titlepage}
+
+% Numbering: we place here Chapter 5 (after Chapter 4)
+\setcounter{chapter}{4}
+
+% ======================================================
+\chapter{Discussion}
+\label{chap:resultats}
+% ======================================================
+
+
+
+\section*{Introduction}
+
+This chapter offers an interpretation of the empirical results presented in Chapter~4 and situates them within the broader academic and institutional debates on how artificial intelligence (AI) is transforming mortgage credit allocation. The discussion is structured around the four research questions (RQ1–RQ4) and mobilizes insights from economics, law, sociology, and algorithmic fairness. A regional interpretation is proposed for the Tri-State Area (New York, New Jersey, Connecticut), followed by theoretical, methodological, and policy-oriented discussions. The chapter concludes with the main contributions, limitations, and avenues for future research.
+
+\bigskip
+
+The empirical transition documented in Chapter~4—from a pre-algorithmic regime (2004--2017) to a regime structured by the use of AI models (2018--2023)—represents a major break in the way information about borrowers is produced, classified, and used. This break is part of a much broader academic debate on the automation of judgment \cite{Kleinberg2018}, the risks of proxy discrimination \cite{BarocasSelbst2016,KearnsRoth2020}, the role of incomplete data \cite{Fuster2019}, and the transformations of financial governance driven by algorithms \cite{CowgillTucker2020}.
+
+The results show that:
+\begin{enumerate}
+    \item income gradients become significantly stronger in the AI era;
+    \item the predictability of credit decisions increases substantially;
+    \item some structural determinants (loan type, loan purpose) become more stable;
+    \item algorithmic fairness improves for some groups (notably Black borrowers) but deteriorates for profiles with missing information.
+\end{enumerate}
+
+These dynamics reflect not only a technical evolution, but also a deep institutional transformation embedded in a long history of residential and financial stratification in the United States \cite{Squires2017,Rothstein2018}. The following sections expand on these observations by following the structure of the research questions.
+
+\newpage
+
+% ============================================================
+\section{Integrated Synthesis of Chapter 4 Results}
+% ============================================================
+
+The results from Chapter~4 reveal four main lines of force that are essential to understanding the impact of AI on credit allocation in the Tri-State Area.
+
+\subsection{Strengthening of income gradients}
+
+The logistic analyses for the AI period (2018--2023) show significant negative coefficients for the \textit{Low income} and \textit{Middle income} groups, indicating a substantial decrease in the odds of approval relative to high-income areas. These findings are consistent with the work of \citeA{Fuster2019} and \citeA{Bhutta2021}, who document the importance of geographic characteristics as proxy variables for financial risk.
+
+The stronger gradients observed in the AI era suggest that algorithms learn—and may even accentuate—the socio-economic regularities embedded in the urban and residential fabric. The capacity of models to systematize and amplify these structures, already highlighted by \citeA{MullainathanSpiess2017}, confirms that AI models often function as statistical amplifiers of pre-existing realities. In this sense, the empirical results provide a concrete illustration of the shift in the power to qualify risk: away from human loan officers and toward computational infrastructures that aggregate signals from labor markets, housing markets, and wealth distribution.
+
+\subsection{Increase in predictive performance}
+
+The shift from near-zero pseudo-$R^2$ in the pre-AI era to approximately $0.38$ in the AI era represents a major transformation. Models trained in the AI period capture more effectively the structural relationships between loan characteristics, socio-economic context, and approval probability. The ROC curves reported in Figure~4.2 illustrate this continuous improvement and connect directly to the work of \citeA{Kleinberg2018} on reducing decision noise in human processes.
+
+More broadly, in the AI and decision-making literature (e.g., Russell and Norvig), these results resonate with the idea that well-calibrated decision-support systems can improve internal consistency while making implicit trade-offs more visible. Here, the gain in predictive performance is not neutral: it is accompanied by a sharper structuring of the winners and losers of the credit regime.
+
+\subsection{Persistence of structural determinants}
+
+The variables \textit{loan type} and \textit{loan purpose}, historically central in the mortgage finance literature (Di Maggio \& Kermani, 2022), exhibit significant, coherent, and more stable effects in the AI era. Inter-institutional heterogeneity—previously substantial—declines markedly in the 2018--2023 data. This suggests that AI models act as a mechanism for standardizing credit practices, aligning the implicit pricing rules of different lenders around a common decision rule.
+
+In this perspective, AI does not simply introduce new determinants: it also hierarchizes and rigidifies existing ones. Risk configurations associated with loan type (e.g., FHA vs. conventional loans) and loan purpose (purchase, refinance, consolidation) are more fully internalized by the models, which reduces discretionary leeway at the local level but may also limit the ability to adapt to particular contexts.
+
+\subsection{Reconfiguration of fairness patterns}
+
+The fairness analyses in Table~6.4 reveal two contrasting dynamics:
+\begin{itemize}
+    \item near-perfect convergence between White and Black borrowers in terms of TPR, FNR, and PPV, in contrast with the more unequal patterns documented by \citeA{Bartlett2022} in other credit contexts;
+    \item extreme penalization of ``Race Not Available'' files, characterized by very low Disparate Impact, low sensitivity, and degraded calibration.
+\end{itemize}
+
+This result is consistent with the literature on the impact of incomplete data \cite{BuolamwiniGebru2018,BarocasSelbst2016}. AI amplifies statistical gaps and severely penalizes poorly documented profiles. It also confirms the central intuition in the work by Selbst and co-authors on sociotechnical systems: the distributive properties of a model cannot be evaluated without a fine-grained analysis of how the input data are produced. Inequalities do not reside only in coefficients or predictions, but in the entire trajectory that leads some profiles to be poorly or partially observed.
+
+% ============================================================
+\section{Discussion by Research Question}
+% ============================================================
+
+\subsection{RQ1: Income effects in the AI era}
+
+The results show a very pronounced income gradient: low-income areas experience a reduction in approval odds of about 22\%, even after controlling for loan characteristics. AI clearly amplifies socio-economic structures that are historically rooted in the urban geography of the Tri-State Area, in line with the mechanisms identified by \citeA{Hardy2023} in other credit markets.
+
+This strengthening of income gradients must be interpreted in light of debates on proxy discrimination \cite{BarocasSelbst2016}. Neighborhood-level variables on income, poverty, or unemployment, combined with information on local house prices and market structure, effectively serve as proxies for normatively sensitive dimensions (social class, race, residential stability). Because AI models are explicitly optimized for predictive performance, they tend to fully exploit these correlations, even if this means reproducing existing stratification dynamics.
+
+\subsection{RQ2: Predictive capacity and model structure}
+
+The improvement in AUC in the AI era (from approximately $0.61$ to $0.91$ for RF/XGBoost) signals a structural consolidation of the credit allocation regime. This gain in predictability relates directly to the algorithmic econometrics literature \cite{MullainathanSpiess2017} and to statistical learning approaches such as those discussed in \cite{Friedman2001}.
+
+However, this increase in predictive power must be situated within broader debates on ``trustworthy AI'' and the governance of intelligent systems. Kearns and Roth, in their work on the ethical algorithm, emphasize that improvements in accuracy are only acceptable when accompanied by guarantees on robustness, transparency, and non-discrimination. Likewise, the law-and-technology literature (e.g., Citron) stresses that automated scoring systems can worsen power asymmetries if their internal mechanisms remain opaque to borrowers and regulators.
+
+\subsection{RQ3: Screening quality (approval vs. default proxy)}
+
+AI-based screening is slightly more coherent: approved loans are 3.6 percentage points less associated with risk signals. However, the direct effect of the \textit{era\_IA} indicator remains modest ($p \approx 0.059$), indicating that AI improves overall screening coherence without completely revolutionizing the process. This is consistent with the cautious conclusions reported by \citeA{Agarwal2015} on gradual transformations in lenders' risk-taking behavior.
+
+Conceptually, these results suggest that AI plays a role of refinement rather than rupture: the boundary between good and bad risks becomes sharper, but the general architecture of the credit regime remains intact. The added value lies in reducing ``gross errors'' (e.g., accepting clearly risky files, rejecting very solid files), rather than in radically changing the populations served. This observation is coherent with a ``Russellian'' vision of AI as a system for optimizing pre-specified objective functions: as long as the objective remains short-term default risk, the underlying social structure is not transformed.
+
+\subsection{RQ4: Algorithmic fairness}
+
+The results indicate:
+\begin{itemize}
+    \item quasi-equality in conditional performance between White and Black borrowers;
+    \item extreme penalization of ``Race Not Available'' files.
+\end{itemize}
+
+These patterns are both similar to and partially distinct from the results in \citeA{Bartlett2022}, who document persistent discrimination in many segments of the credit market. They confirm the central role of complete data in any algorithmic system, echoing the conclusions of \citeA{BuolamwiniGebru2018}.
+
+From a fairness metrics perspective, the Tri-State Area case also illustrates the tensions highlighted in the literature (Kleinberg, Selbst, Kearns) between different definitions of fairness: equal error rates, inter-group calibration, disparate impact, and so on. Relatively convergent conditional performance between White and Black borrowers coexists with stronger income gradients and penalization of missing data. In other words, some fairness criteria improve while other dimensions of distributive justice remain problematic or worsen, reinforcing the need for a multi-criteria approach.
+
+% ============================================================
+\section{Regional Interpretation: New York, New Jersey, Connecticut}
+% ============================================================
+
+\subsection{Why a regional reading is essential}
+
+The Tri-State Area is a deeply heterogeneous socio-economic space. The use of AI models—which rely heavily on geographic signals—interacts with this spatial structure.
+
+As \citeA{Gyourko2014} emphasize, regional housing markets are not merely a backdrop: they fundamentally shape risk distribution, borrower composition, and data completeness. When AI models incorporate Census tract characteristics, they reproduce and systematize these territorial realities.
+
+The importance of this regional reading also stems from the fact that AI operates as a structural amplifier \cite{KearnsRoth2020}: it strengthens statistical regularities, whether equitable or not. In regions where socio-economic and racial disparities are already pronounced, the redistributive effects of AI can be magnified. Conversely, in more homogeneous environments, the same models may yield comparatively more neutral outcomes in terms of inequality.
+
+\subsection{New York: an extreme laboratory of AI dynamics}
+
+New York is one of the most socio-economically contrasted urban environments in the country. Income gaps between Manhattan and the Bronx, or between Williamsburg and East New York, often exceed 400\%. These disparities are compounded by persistent residential segregation, long documented in the urban sociology literature \cite{MasseyDenton1993}.
+
+In this context, AI models learn highly polarized socio-spatial patterns. ACS variables—median income, poverty rate, racial composition—become highly discriminating statistical signals. The Chapter~4 analysis shows that income gradients are more pronounced in the AI period: in a state where socio-economic extremes are so stark, such amplification is highly plausible.
+
+A second structural element in New York lies in the incompleteness of demographic data. HMDA files for certain dense urban neighborhoods exhibit high rates of ``Race Not Available''. As our results and the data-quality literature suggest \cite{BuolamwiniGebru2018}, data incompleteness triggers major penalties in fairness metrics.
+
+Finally, AI models interact strongly with the spatial structure of New York's housing market: algorithms reproduce micro-local realities (pockets of wealth and areas of accumulated poverty). AI does not eliminate historical divides; it formalizes them statistically, in line with the mechanisms described by \citeA{Rothstein2018}. This algorithmic formalization, however, confers a veneer of technical neutrality on disparities that remain deeply political, making local regulatory intervention all the more crucial.
+
+\subsection{New Jersey: suburban homogeneity and more stable AI}
+
+New Jersey is characterized by much greater socio-economic homogeneity than New York or Connecticut. The state is dominated by large suburban areas characterized by:
+\begin{itemize}
+    \item more homogeneous median incomes;
+    \item weaker racial segmentation;
+    \item a relatively stable and predictable housing stock.
+\end{itemize}
+
+This homogeneity reduces the amplitude of observable gradients in the data. AI models operate in an environment where:
+\begin{itemize}
+    \item within-tract variance is lower;
+    \item HMDA data are more complete;
+    \item socio-economic signals are more continuous.
+\end{itemize}
+
+Under these conditions, algorithms typically produce more calibrated decisions with fewer extreme outcomes. The risks of proxy discrimination are significantly attenuated, because the socio-economic patterns that models learn are smoother and less tightly coupled to deep-seated segregation. New Jersey thus appears as the environment where AI functions most ``smoothly'', confirming the logic of interaction between regional structure and algorithmic behavior.
+
+This relative stability does not mean that equity concerns vanish; rather, the issues take the form of fine-tuning (e.g., handling atypical income profiles or neighborhoods in transition) rather than large-scale ruptures between rich and poor areas. Public policy can therefore focus more on preventing future drift than on correcting already massive inequalities.
+
+\subsection{Connecticut: extreme socio-economic polarization}
+
+Connecticut combines some of the richest areas in the United States (Fairfield County, Greenwich) with some of the poorest (Bridgeport, Hartford, New Haven). This bimodal polarization creates ideal conditions for AI models to amplify socio-economic gradients.
+
+In affluent areas, ACS variables signal extremely favorable socio-economic environments: high income, low poverty, strong residential stability. In poorer areas, the signals are exactly the opposite.
+
+AI models trained on these data learn these contrasts almost perfectly. As \citeA{Fuster2019} note, such polarization strengthens model dependence on geographic signals. This dynamic creates a high risk of proxy discrimination. Already underserved areas may be subject to even stronger statistical penalties. AI does not create these disparities; it amplifies them.
+
+From a regional governance perspective, Connecticut thus appears as a textbook case where deploying AI models without explicit corrective mechanisms is likely to further entrench geographies of exclusion. The combination of strong dependence on neighborhood variables and a polarized socio-economic fabric yields an algorithmic risk map that closely tracks historical boundaries of segregation.
+
+\subsection{Regional synthesis}
+
+The three states in the Tri-State Area illustrate three distinct structural contexts. When AI interacts with these contexts, its redistributive effects vary strongly:
+\begin{itemize}
+    \item In New York, AI amplifies extreme contrasts and severely penalizes data incompleteness.
+    \item In New Jersey, AI benefits from a more homogeneous environment and produces more calibrated, less unequal decisions.
+    \item In Connecticut, extreme polarization leads to a notable strengthening of socio-economic gradients.
+\end{itemize}
+
+In short, AI is not a universal, neutral system: it is deeply conditioned by the socio-economic and territorial structure in which it operates. This conclusion echoes sociotechnical analyses that stress the local embedding of technologies: the same model can have more or less inequitable effects depending on the degree of segregation, data quality, and the intensity of regional regulation.
+
+For policymakers and financial institutions, this regional reading implies that no single, uniform approach to algorithmic governance is sufficient. Safeguards, audits, and redistributive correctives must be tailored to the fine-grained geography of inequality, taking into account the specific configuration of each state and, in many cases, each metropolitan area.
+
+% ============================================================
+\section{Methodological Analysis and Comparison with the HMDA Literature}
+% ============================================================
+
+Beyond the substantive findings, this study is distinguished by a set of methodological choices that position it both in continuity with and in partial rupture from previous HMDA-based empirical work.
+
+\subsection{Positioning relative to existing HMDA studies}
+
+The work of \citeA{Fuster2019} and \citeA{Bartlett2022} marked a first generation of analyses of machine learning's impact on credit markets, using HMDA data enriched with various complementary sources. These studies focus mainly on the relative performance of ``FinTech'' lenders versus traditional banks and on measuring racial and geographic discrimination in approval rates and loan terms.
+
+This dissertation shares a common foundation with those studies: the use of HMDA as a systematic observational base, strong attention to neighborhood variables, and the deployment of advanced predictive models. However, it differs in several key respects:
+\begin{itemize}
+    \item a specific focus on the Tri-State Area rather than on the entire national territory, allowing for finer analysis of intra-regional dynamics;
+    \item an explicit construction of an ``AI era'' (2018--2023) contrasted with a pre-algorithmic period, whereas many studies implicitly treat AI as already ubiquitous;
+    \item systematic integration of fairness metrics (Equal Opportunity, Disparate Impact, calibration) into model evaluation, beyond global performance indicators alone.
+\end{itemize}
+
+\subsection{Strengths and limitations of the models used}
+
+From a technical standpoint, the combination of logistic models, random forests, and XGBoost spans a continuum from interpretable parametric approaches to more powerful non-linear methods. This choice aligns with the applied econometrics literature \cite{MullainathanSpiess2017,Friedman2001}, which recommends comparing multiple model families to distinguish structural features of the data from algorithm-specific effects.
+
+Relative to other HMDA studies, this research offers three important methodological contributions:
+\begin{itemize}
+    \item systematic robustness checks of the results across alternative specifications (e.g., exclusion of extreme observations, variations in the definition of income groups);
+    \item explicit treatment of missing data as an object of analysis in its own right, rather than as a mere statistical nuisance;
+    \item close articulation between technical metrics and normative questions, in order to avoid the illusion of metric ``neutrality''.
+\end{itemize}
+
+These choices strengthen the internal credibility of the findings while highlighting some unavoidable limitations of HMDA-based analyses: absence of key internal risk variables, lack of information on exact loan terms, and the impossibility of directly observing default.
+
+\subsection{Specific contributions of the HMDA+ACS fusion}
+
+One of the central methodological contributions of this dissertation is the systematic fusion of HMDA with ACS data at the Census tract level. This operation anchors credit decisions in a rich socio-economic environment that includes median income, poverty, unemployment, and racial composition.
+
+Compared to studies using more aggregated proxies (at the state or county level), this enhanced granularity offers two major advantages:
+\begin{itemize}
+    \item better detection of intra-metropolitan gradients, which are often invisible in overly aggregated data;
+    \item finer understanding of proxy discrimination mechanisms, by showing how neighborhood variables can serve as substitutes for sensitive characteristics.
+\end{itemize}
+
+This methodological choice, however, comes at a cost: the results are highly contextualized and are not intended to be generalized ``as is'' to other regions without caution. The study's scope is therefore both deeper (for the Tri-State Area) and more bounded (in terms of external generalization) than that of national-level analyses.
+
+% ============================================================
+\section{Implications for Theory}
+% ============================================================
+
+The findings contribute to three major debates in the literature, at the intersection of economics, AI, law, and sociotechnical studies.
+
+\subsection{AI as a mechanism of standardization}
+
+The transition from a human decision regime—characterized by considerable heterogeneity—to a more systematized algorithmic regime confirms the analyses of \citeA{Kleinberg2018} on noise reduction. Because models trained on the AI period produce more predictable and more homogeneous decisions across institutions, they support the idea that AI acts as a device for normalizing practices.
+
+More broadly, this dynamic echoes contemporary reflections on ``governance by numbers'', where the standardization of metrics and procedures becomes a central instrument of government. Far from being purely technical, this standardization reshapes the scope of negotiation between borrowers and lenders, more tightly constraining the possibilities for exception and the recognition of atypical situations.
+
+\subsection{Proxy discrimination}
+
+The strengthened socio-economic gradients observed in several states corroborate the thesis of \citeA{BarocasSelbst2016} that algorithms can reconstruct racial inequalities from apparently neutral variables. The results show that AI models learn patterns strongly correlated with residential segregation structures, even in the absence of explicit racial variables.
+
+The work of Kearns and Roth emphasizes that such reconstruction is an almost inevitable consequence when correlations between sensitive variables and neighborhood variables are strong. In this respect, the dissertation offers a detailed empirical demonstration of these mechanisms, revealing how income gradients and ACS variables become institutional vehicles for translating racial and class inequalities into credit decisions.
+
+\subsection{The central role of missing data}
+
+The extreme penalties associated with the ``Race Not Available'' category demonstrate that fairness quality depends directly on data quality. This result is in line with the recent analyses of \citeA{Selbst2019} on the structuring role of informational gaps.
+
+In practice, this means that theoretical debates on algorithmic justice cannot be limited to formal model properties (fairness constraints, regularization, etc.). They must also incorporate reflection on the entire data production chain: who is encouraged to provide which information, under what conditions, and with what guarantees against abusive secondary uses. In this respect, legal scholarship on data protection and civil rights (e.g., Citron) offers a complementary analytical framework for thinking about obligations of transparency, consent, and redress.
+
+% ============================================================
+\section{Implications for Public Policy}
+% ============================================================
+
+Five major policy implications emerge from the results:
+
+\subsection{Mandatory algorithmic audits}
+
+The magnitude of regional differences justifies more sophisticated audits: group-wise calibration, geographically contextualized Disparate Impact, and analysis of false negatives, in line with methodological recommendations in the responsible AI literature \cite{KearnsRoth2020}.
+
+In concrete terms, regulators should require financial institutions to produce detailed performance and fairness reports, disaggregated by race, income, and geography, at regular intervals. These audits should include sensitivity analyses (e.g., the effect of modifying ACS variables), as well as counterfactual scenarios (e.g., removal of certain neighborhood variables) to assess models' dependence on potentially problematic signals.
+
+\subsection{Improving data completeness}
+
+The CFPB \cite{CFPB2019} already recommends robust mechanisms for data collection and validation. The results show that this recommendation is not only relevant but essential to avoid systematic penalization of borrowers whose demographic characteristics are incomplete.
+
+In practice, this implies:
+\begin{itemize}
+    \item strengthening reporting obligations for lenders, including sanctions for abnormally high rates of ``Race Not Available'';
+    \item simplifying and securing procedures for collecting sensitive data, in order to reduce borrowers' reluctance to self-identify;
+    \item piloting carefully regulated mechanisms for assisted data completion, to avoid having incompleteness mechanically translate into exclusion.
+\end{itemize}
+
+\subsection{Transparency of AI models}
+
+Non-linear models require:
+\begin{itemize}
+    \item rigorous documentation;
+    \item explanations via SHAP/LIME or similar tools;
+    \item enhanced institutional oversight.
+\end{itemize}
+
+Beyond internal documentation, there is a need for graduated transparency obligations:
+\begin{itemize}
+    \item toward regulators, who must be able to audit model code, training data, and metrics;
+    \item toward borrowers, who must receive understandable explanations of individual decisions (rejections or unfavorable terms), without disclosing full proprietary models.
+\end{itemize}
+
+These requirements align with a broader move toward algorithmic due process, which seeks to bring AI use into closer alignment with procedural guarantees offered in other areas of law.
+
+\subsection{Targeted policies for low-income areas}
+
+The observed gradients justify corrective, place-based policies (local subsidies, geographic targeting, support programs for first-time buyers) in territories most exposed to proxy discrimination.
+
+Specific interventions might include:
+\begin{itemize}
+    \item interest-rate subsidies or public guarantees for borrowers in neighborhoods combining high poverty and a history of credit exclusion;
+    \item pilot programs combining financial counseling, legal support, and post-origination monitoring to reduce default risk while expanding access;
+    \item closer coordination between local housing authorities and financial regulators, so that urban revitalization goals and algorithmic fairness objectives reinforce rather than contradict each other.
+\end{itemize}
+
+\subsection{Institutional capacity-building and community participation}
+
+Finally, the results highlight the need to strengthen the analytical capabilities of regulators and civil society organizations so that they can engage on more equal footing with financial institutions on technical AI issues.
+
+Two priority areas stand out:
+\begin{itemize}
+    \item developing in-house data science and algorithmic audit expertise within public agencies;
+    \item establishing participatory mechanisms for affected communities (e.g., user panels, local consultations) to discuss territorial effects of models and co-design appropriate responses.
+\end{itemize}
+
+By more closely involving the populations concerned, AI governance policies can gain both democratic legitimacy and empirical relevance, particularly in regions such as the Tri-State Area where socio-economic contrasts are extreme.
+
+% ============================================================
+\section{Specific Contributions of the Study}
+% ============================================================
+
+This dissertation makes four major contributions that combine empirical, methodological, and theoretical innovations:
+
+\begin{itemize}
+    \item \textbf{An integrated analysis of AI performance and fairness in the Tri-State Area.} The study offers, for the first time at this scale, a joint evaluation of predictive performance and fairness properties of AI-based credit allocation models in the Tri-State Area. By bringing together risk metrics (AUC, pseudo-$R^2$, ROC curves) and fairness metrics (Equal Opportunity, Disparate Impact, calibration), it shows that improved predictivity is not mechanically synonymous with progress in distributive justice; it can coexist with strengthened socio-economic gradients.
+    
+    \item \textbf{A novel HMDA+ACS fusion to capture fine-grained socio-economic dynamics.} By systematically fusing HMDA with ACS indicators at the Census tract level, the research more tightly links credit decisions to local socio-economic conditions than studies relying on state- or county-level aggregates. This approach reveals intra-metropolitan gradients and empirically documents the role of neighborhood variables as vectors of proxy discrimination.
+    
+    \item \textbf{An empirical demonstration of the central role of data incompleteness.} By isolating the ``Race Not Available'' category and systematically measuring its fairness performance, the study shows that missing data are not a mere technical artifact but a substantive driver of how credit opportunities are distributed. This demonstration sheds new light on theoretical debates about data production and sociotechnical systems, showing that incompleteness itself can be a source of injustice.
+    
+    \item \textbf{Rigorous documentation of the institutional transition to AI.} By structuring the analysis around two temporal regimes (pre-AI vs. AI era) and tracking the evolution of income gradients, structural determinants, and fairness metrics, the dissertation provides a precise chronology of the algorithmic transition in the Tri-State Area. It highlights the gradual and partly cumulative nature of this transition: AI does not abruptly replace prior regimes but is layered onto institutions and market structures that are already unequal.
+\end{itemize}
+
+Taken together, these contributions position the dissertation at the intersection of several fields—credit economics, data science, responsible AI studies, and the sociology of inequality—and make it a useful reference point for future research on the territorial impact of AI in financial services.
+
+% ============================================================
+\section{Limitations}
+% ============================================================
+
+As with any empirical study using HMDA, several limitations remain:
+\begin{itemize}
+    \item absence of key internal risk variables;
+    \item impossibility of observing proprietary models directly;
+    \item an imperfect proxy for default;
+    \item unobserved institutional heterogeneity.
+\end{itemize}
+
+These limitations call for caution in interpreting the magnitude of effects and in extrapolating beyond the specific institutional and regional context studied here.
+
+% ============================================================
+\section{Future Research Directions}
+% ============================================================
+
+Future research may explore:
+\begin{itemize}
+    \item partial or supervised access to internal models;
+    \item national multi-state analyses comparing regions with different segregation patterns;
+    \item multi-level hierarchical models that explicitly account for tract, county, and lender effects;
+    \item structural analyses of missing data mechanisms and their distributive consequences;
+    \item more recent AI architectures (Transformers, advanced GBDT variants) and their impact on both performance and fairness.
+\end{itemize}
+
+Such extensions would make it possible to test the robustness of the present findings in other institutional settings and to refine our understanding of how AI reshapes access to credit.
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+The shift to AI profoundly transforms credit allocation in the Tri-State Area. AI improves predictive performance, stabilizes structural determinants, and reduces some conditional disparities. However, it also amplifies income effects, reshapes geographic inequalities, and penalizes borrowers with incomplete data. AI does not eliminate inequalities; it reconfigures them according to territorial structure and data quality.
+
+Attentive regulation, improved data quality, and heightened vigilance regarding proxy discrimination mechanisms are necessary to guarantee equitable access to credit in an algorithmic environment.
+
+% --- force display of all .bib entries (optional; remove later if desired) ---
+\nocite{*}
+
+\bibliographystyle{apacite}
+\bibliography{references}
+
+\end{document}

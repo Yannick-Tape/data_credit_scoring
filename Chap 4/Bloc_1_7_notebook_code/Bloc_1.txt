@@ -1,0 +1,402 @@
+je vais te l'envoyer par bloc (Bloc_1, Bloc_2, Bloc_3, Bloc_4, Bloc_5, Bloc_6, Bloc_7)et tu garderas tout le contenu de mon notebook en mémoire. voici le Bloc 1 : "thèse :
+# > Chapitre empirique : "AI-Driven Fair Creditworthiness and Credit Scoring:
+# > A Two-Decade Analysis in the Tri-State Area (2007–2024)"
+
+
+# 0. Imports # # Chapitre empirique – Notebook maître HMDA + ACS (Tri-State, 2007–2023)
+#
+# Ce notebook produit **tous les tableaux et graphiques** mentionnés dans le chapitre :
+# - Comparaison des cohortes pré-IA (2007–2017) vs IA (2018–2023)
+# - Modèles logit "miroirs"
+# - Analyses ACS (hmda_acs_tristate_2018_2023_FINAL)
+# - Modèles ML (RF / XGBoost) et premières métriques de fairness
+#
+# 🔗 Référence et configuration globale
+
+import os
+import numpy as np
+import pandas as pd
+
+import matplotlib.pyplot as plt
+
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, roc_curve, f1_score, accuracy_score, confusion_matrix
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+
+# XGBoost est optionnel : installe-le si besoin via `pip install xgboost`
+try:
+    from xgboost import XGBClassifier
+    HAS_XGBOOST = True
+except ImportError:
+    HAS_XGBOOST = False
+
+plt.style.use("default")
+
+# Pour que les DataFrames s'affichent proprement
+pd.set_option("display.max_columns", 100)
+pd.set_option("display.width", 160)
+
+# Chemin de travail (adapter si nécessaire)
+BASE_DIR = r"C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work"
+
+CORE_PATH  = os.path.join(BASE_DIR, "hmda_tristate_core_2007_2024_v2.parquet")
+MODEL_PATH = os.path.join(BASE_DIR, "hmda_tristate_model_2018_2023_FIXED.parquet")
+ACS_PATH   = os.path.join(BASE_DIR, "hmda_acs_tristate_2018_2023_FINAL.parquet")
+## 1. Chargement des trois bases et sanity checks
+#
+# 🔗 Référence chapitre :
+# - Section 1.1 et 1.2 : "Présentation des sources" et "Construction des cohortes"
+# - Tableau 1.1 : Vue d'ensemble des trois bases
+
+# 1.1. Chargement des fichiers Parquet
+
+core = pd.read_parquet(CORE_PATH)
+model = pd.read_parquet(MODEL_PATH)
+hmda_acs = pd.read_parquet(ACS_PATH)
+
+print("core shape :", core.shape)
+print("model shape:", model.shape)
+print("acs shape  :", hmda_acs.shape)
+core shape : (14163286, 12)
+model shape: (571820, 15)
+acs shape  : (571820, 35)
+# 1.2. Aperçu des colonnes principales pour vérifier la cohérence
+# (On imprime quelques colonnes clés seulement)
+
+def quick_cols(df, name, n=30):
+    print(f"\n=== {name} – colonnes (top {n}) ===")
+    print(list(df.columns[:n]))
+
+quick_cols(core, "CORE 2007–2024")
+quick_cols(model, "MODEL 2018–2023")
+quick_cols(hmda_acs, "HMDA+ACS 2018–2023") 
+
+
+=== CORE 2007–2024 – colonnes (top 30) ===
+['action_taken', 'applicant_sex', 'county_code', 'hoepa_status', 'lien_status', 'loan_purpose', 'loan_type', 'preapproval', 'purchaser_type', 'rate_spread', 'state_code', 'year']
+
+=== MODEL 2018–2023 – colonnes (top 30) ===
+['year', 'state_code', 'county_code', 'census_tract', 'geoid_tract', 'loan_amount', 'loan_purpose', 'loan_type', 'lien_status', 'hoepa_status', 'action_taken', 'applicant_sex', 'derived_ethnicity', 'derived_race', 'approved']
+
+=== HMDA+ACS 2018–2023 – colonnes (top 30) ===
+['year', 'state_code', 'county_code', 'census_tract', 'geoid_tract', 'loan_amount', 'loan_purpose', 'loan_type', 'lien_status', 'hoepa_status', 'action_taken', 'applicant_sex', 'derived_ethnicity', 'derived_race', 'approved', 'NAME', 'acs_median_income', 'acs_pop_total', 'acs_white', 'acs_black', 'acs_asian', 'acs_hispanic', 'acs_unemployed', 'acs_labor_force', 'acs_poverty_num', 'acs_poverty_den', 'state', 'county', 'tract', 'acs_poverty_rate']
+
+## 2. Construction des cohortes pré-IA vs IA
+#
+# 🔗 Référence chapitre :
+# - Section 1.2 : "Construction des deux cohortes"
+# - Graphique 0.1 : chronologie avec la coupure 2017/2018
+#
+# Cohortes :
+# - pre_ai : années 2007–2017 dans la base `core`
+# - ai_hmda : années 2018–2023 dans la base `model`
+# - ai_acs : années 2018–2023 dans la base fusionnée HMDA+ACS
+
+# 2.1. On suppose que la variable d'année s'appelle "year" dans les trois bases.
+# Adapter si besoin (ex: "activity_year", etc.)
+
+# Filtre pré-IA (2007–2017)
+pre_ai = core[(core["year"] >= 2007) & (core["year"] <= 2017)].copy()
+
+# Cohorte IA HMDA-only (le fichier 'model' est déjà restreint à 2018–2023)
+ai_hmda = model.copy()
+
+# Cohorte IA HMDA+ACS fusionnée
+ai_acs = hmda_acs.copy()
+
+for name, df in [("pre_ai", pre_ai), ("ai_hmda", ai_hmda), ("ai_acs", ai_acs)]:
+    print(f"{name} – shape: {df.shape}, années uniques: {sorted(df['year'].unique())}")
+
+pre_ai – shape: (13512746, 12), années uniques: [np.float64(2007.0), np.float64(2008.0), np.float64(2009.0), np.float64(2010.0), np.float64(2011.0), np.float64(2012.0), np.float64(2013.0), np.float64(2014.0), np.float64(2015.0), np.float64(2016.0), np.float64(2017.0)]
+ai_hmda – shape: (571820, 15), années uniques: [np.int64(2018), np.int64(2019), np.int64(2020), np.int64(2021), np.int64(2022), np.int64(2023)]
+ai_acs – shape: (571820, 35), années uniques: [np.int64(2018), np.int64(2019), np.int64(2020), np.int64(2021), np.int64(2022), np.int64(2023)]
+
+## 3. Analyse descriptive – Taux d'approbation et profils de demandeurs
+#
+# 🔗 Référence chapitre :
+# - Section 2.1 : "Taux d’approbation"
+# - Section 2.2 : "Profil socio-économique"
+# - Figures 2.1–2.4 et Tableaux 2.1–2.2
+#
+# Hypothèse :
+# - La variable d'approbation est `approved` (0/1) ou dérivée de "action_taken".
+
+# 3.1. Si la variable "approved" n'existe pas encore, on la crée à partir d'action_taken.
+# Exemple : HMDA moderne -> action_taken = 1 (loan originated) => approved = 1
+
+def ensure_approved_flag(df, action_col="action_taken", approved_col="approved"):
+    """
+    Crée une variable binaire 'approved' si elle n'existe pas,
+    en se basant sur 'action_taken' (HMDA).
+    """
+    if approved_col in df.columns:
+        return df
+    df = df.copy()
+    # Exemple : 1 = loan originated, 2/3 = applications approved but not accepted ?
+    # Ici on code : 1, 2, 3 => 1 ; le reste => 0
+    df[approved_col] = df[action_col].isin([1, 2, 3]).astype(int)
+    return df
+
+pre_ai = ensure_approved_flag(pre_ai)
+ai_hmda = ensure_approved_flag(ai_hmda)
+ai_acs = ensure_approved_flag(ai_acs)
+
+
+print("pre_ai")
+pre_ai["approved"].value_counts(normalize=True).head()
+
+pre_ai
+approved
+1    0.706829
+0    0.293171
+Name: proportion, dtype: float64
+
+print("ai_hmda")
+ai_hmda["approved"].value_counts(normalize=True).head()
+
+
+ai_hmda
+approved
+1    0.542304
+0    0.457696
+Name: proportion, dtype: float64
+
+
+print("ai_acs")
+ai_acs["approved"].value_counts(normalize=True).head()
+
+ai_acs
+approved
+1    0.542304
+0    0.457696
+Name: proportion, dtype: float64
+
+
+'''
+À un niveau agrégé, la comparaison entre les deux régimes met en évidence une rupture 
+nette dans l’intensité globale de l’octroi de crédit. Sur la période pré-IA (2007–2017), 
+la proportion moyenne de demandes approuvées dans la cohorte pre_ai s’élève à environ 70,7 %, 
+contre 54,2 % seulement dans la cohorte ai_hmda (2018–2023), soit une baisse de plus de 16 points 
+de pourcentage. Autrement dit, le régime décisionnel associé à la phase de généralisation des outils 
+algorithmiques opère dans un environnement globalement plus restrictif en termes d’approbation brute 
+des demandes. Cette observation ne constitue pas en soi une preuve causale de l’impact de l’IA, mais 
+elle suggère que le passage d’un régime pré-algorithmique, plus généreux en volume d’approbations, à 
+un régime post-algorithmique, plus sélectif, s’accompagne d’un resserrement structurel de l’accès au crédit, 
+qui doit être examiné de manière plus fine dans les sections suivantes, en particulier sous l’angle des 
+disparités raciales et territoriales.
+'''
+
+# 3.2. Taux d'approbation annuel sur 2007–2023 (base core)
+# 🔗 Graphique 2.1 – "Taux d'approbation, 2007–2023"
+
+core = ensure_approved_flag(core)
+approval_year = (
+    core.groupby("year")["approved"]
+    .mean()
+    .reset_index()
+    .rename(columns={"approved": "approval_rate"})
+)
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(approval_year["year"], approval_year["approval_rate"], marker="o")
+ax.axvline(2017.5, color="red", linestyle="--", label="Rupture 2017/2018 (IA)")
+ax.set_title("Taux d'approbation moyen – Tri-State, 2007–2023")
+ax.set_ylabel("Taux d'approbation")
+ax.set_xlabel("Année")
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+approval_year.head()
+
+'''
+  # Interprétation du Graphique 2.1 – Taux d’approbation moyen (2007–2023)
+
+Le Graphique 2.1 retrace l’évolution du taux d’approbation moyen des demandes 
+de prêts hypothécaires dans la région Tri-State sur la période 2007–2023. La série 
+met en évidence un niveau initialement élevé des taux d’approbation en 2007 et 2008, 
+oscillant autour de 72 %, avant de connaître une rupture nette en 2009, année marquée par 
+l’intensification de la crise financière mondiale. Cette chute, qui ramène le taux d’approbation 
+à environ 67 %, traduit un durcissement brutal des conditions d’octroi du crédit, consécutif aux 
+pertes massives des institutions financières et aux modifications rapides de leurs politiques de gestion du risque.
+
+À partir de 2010, on observe une phase de stabilisation progressive du taux d’approbation, qui se 
+maintient autour de 70 %. Cette relative normalisation révèle l’installation d’un nouvel équilibre 
+post-crise, caractérisé par des standards prudentiels plus stricts et une surveillance réglementaire renforcée. 
+Cette période constitue ainsi une transition entre un régime de décision majoritairement fondé sur l’évaluation 
+humaine et des systèmes de scoring statistiques relativement simples, vers un environnement plus structuré et encadré.
+
+Enfin, la ligne verticale matérialisant la rupture 2017/2018 permet d’introduire visuellement le basculement 
+vers ce que cette étude qualifie de « régime algorithmique ». Cette séparation graphique ne prétend pas identifier 
+une rupture instantanée des pratiques, mais sert de repère analytique pour comparer deux architectures 
+décisionnelles : un système pré-algorithmique, dominé par l’intervention humaine et les règles internes, 
+et un système post-algorithmique, caractérisé par l’intégration progressive d’outils automatisés et de modèles 
+d’apprentissage automatique. Le graphique constitue ainsi un élément clé pour comprendre le cadre temporel de 
+l’analyse comparative développée dans les sections suivantes.
+'''
+
+0	2007.0	0.717529
+1	2008.0	0.721486
+2	2009.0	0.673220
+3	2010.0	0.699725
+4	2011.0	0.700351
+
+# 3.3. Tableau 2.1 – Taux d'approbation moyen par cohorte et par État (si 'state' ou équivalent existe)
+
+if "state" in core.columns:
+    approval_by_state = (
+        core.groupby(["state", pd.cut(core["year"], [2006, 2017, 2023],
+                                      labels=["pre_IA", "IA"])])["approved"]
+        .mean()
+        .unstack()
+    )
+    display(approval_by_state)
+
+    # Sauvegarde éventuelle pour LaTeX
+    out_dir = os.path.join(BASE_DIR, "tables")
+    os.makedirs(out_dir, exist_ok=True)
+    approval_by_state.to_csv(os.path.join(out_dir, "table_2_1_approval_by_state.csv"))
+
+
+# Dictionnaire FIPS -> Nom de l'État
+state_fips_to_name = {
+    9: "Connecticut",
+    34: "New Jersey",
+    36: "New York"
+}
+
+# On garde state_code et on ajoute une nouvelle colonne "state"
+approval_by_state_named = approval_by_state.copy()
+
+# Création de la colonne lisible "state"
+approval_by_state_named["state"] = (
+    approval_by_state_named.index
+        .astype(int)
+        .map(state_fips_to_name)
+)
+
+# Réorganisation : state_code reste l'index, state devient une colonne
+approval_by_state_named = approval_by_state_named.reset_index()
+
+# Affichage propre
+display(approval_by_state_named)
+
+'''
+# Commentaire du Tableau 2.1 – Taux d’approbation par État (période pré-IA, 2007–2017)
+Le Tableau 2.1 met en évidence des différences substantielles dans les taux d’approbation moyens 
+des demandes de prêts hypothécaires entre les États de la région Tri-State au cours de la période 
+pré-algorithmique. L’État de New York affiche le taux d’approbation le plus élevé (environ 73 %), 
+suivi du Connecticut (environ 70 %), tandis que le New Jersey présente le niveau d’approbation le 
+plus faible (environ 68 %). Ces écarts, bien que relativement modestes en amplitude, traduisent des 
+hétérogénéités structurelles persistantes dans les pratiques locales d’octroi de crédit, qui peuvent 
+refléter des différences institutionnelles entre établissements prêteurs, des conditions de marché 
+immobilier distinctes, ainsi que des disparités socio-économiques territoriales.
+
+Ces résultats suggèrent que, même avant l’intégration à grande échelle de systèmes algorithmiques, 
+les décisions de crédit n’étaient pas spatialement neutres et s’inscrivaient déjà dans des logiques 
+territorialisées. Le fait que New York présente un taux d’approbation systématiquement plus élevé peut 
+être interprété comme le reflet d’un marché plus profond, d’une plus forte concurrence entre prêteurs, 
+ou d’un meilleur accès au crédit pour certaines catégories de ménages. À l’inverse, le New Jersey apparaît 
+comme un environnement plus contraignant, ce qui constitue un point de comparaison essentiel pour l’analyse 
+des transformations induites par le passage au régime algorithmique dans les sections suivantes.
+
+Ces écarts interétatiques servent ainsi de point de départ analytique pour évaluer si l’ère de l’IA a 
+amplifié, atténué ou recomposé les inégalités territoriales préexistantes dans l’accès au crédit.
+'''
+cohort	state_code	pre_IA	state
+0	9.0	0.704873	Connecticut
+1	34.0	0.681274	New Jersey
+2	36.0	0.729269	New York
+
+
+### 3.4. Profils de revenu et de montant de prêt
+#
+# 🔗 Référence chapitre :
+# - Section 2.2 : distribution des revenus et montants de prêts
+# - Figures 2.2 et 2.3
+
+# 3.4. Distribution des revenus (si 'applicant_income' existe)
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+
+for ax, df, title in zip(
+    axes,
+    [ai_hmda, ai_acs],
+    ["Cohorte IA (HMDA)", "Cohorte IA (HMDA + ACS)"]
+):
+    s = pd.to_numeric(df["loan_amount"], errors="coerce").dropna()
+    s = s.clip(upper=s.quantile(0.99))
+    s.hist(ax=ax, bins=50)
+
+    ax.set_title(title)
+    ax.set_xlabel("Montant du prêt (99e percentile)")
+    ax.set_ylabel("Nombre d'observations")
+
+plt.tight_layout()
+plt.show()
+
+'''
+La figure 2.2 présente la distribution des montants de prêts pour la cohorte algorithmique (2018–2023), 
+en comparant la base HMDA standard et la base enrichie HMDA+ACS. Dans les deux cas, les distributions 
+affichent une forte asymétrie à droite, caractéristique des données de crédit immobilier, avec une 
+concentration marquée des observations dans les tranches de montants relativement faibles et intermédiaires, 
+et une longue traîne correspondant aux prêts de très grande valeur.
+La troncation au 99e percentile permet de neutraliser l’influence des valeurs extrêmes tout en conservant la 
+structure centrale de la distribution. Les deux histogrammes présentent une forme remarquablement similaire, 
+ce qui confirme que l’enrichissement par les données ACS n’altère pas la structure des montants de prêt observés, 
+mais agit principalement comme un enrichissement informationnel contextuel plutôt que comme une transformation de l’échantillon.
+
+Ces résultats suggèrent que, dans le régime algorithmique, la dynamique du marché du crédit reste dominée par des 
+prêts de montants modérés, tandis que les prêts de montants exceptionnellement élevés représentent une part marginale 
+mais non négligeable de l’activité. Cette structure est cohérente avec l’idée que les algorithmes interviennent dans 
+un environnement où le volume d’activité est majoritairement concentré sur des profils de risque standardisés, tandis 
+que les cas extrêmes demeurent relativement rares et potentiellement traités de manière plus spécifique.
+
+En bref, Les distributions des montants de prêts dans les bases HMDA et HMDA+ACS montrent une asymétrie marquée à droite, 
+avec une concentration importante des observations sur les montants intermédiaires. La similarité des formes entre les deux 
+distributions confirme que l’enrichissement ACS n’altère pas la structure des montants de prêt, mais apporte principalement 
+un complément contextuel pour l’analyse des inégalités territoriales.
+'''
+
+fig, ax = plt.subplots(figsize=(6, 4))
+
+s = ai_acs["acs_median_income"]
+s = s[(s > 0) & (s < 2_000_000)].dropna()
+
+ax.hist(s, bins=50, log=True)
+
+ax.set_title("Revenu médian de la zone (ACS) – échelle log")
+ax.set_xlabel("Revenu ACS")
+ax.set_ylabel("Fréquence (log)")
+
+plt.tight_layout()
+plt.show()
+
+'''
+La figure 2.3 représente la distribution du revenu médian des zones de recensement (tracts) 
+issue de l’American Community Survey (ACS) pour la cohorte algorithmique, en utilisant une 
+échelle logarithmique sur l’axe des ordonnées. Ce choix méthodologique permet de visualiser 
+efficacement une distribution fortement asymétrique, caractérisée par une concentration importante 
+d’observations dans les tranches de revenu intermédiaire et l’existence d’une longue traîne 
+correspondant aux zones les plus aisées.
+La forme de la distribution suggère une hétérogénéité territoriale marquée des conditions socio-économiques 
+dans la région étudiée. La majorité des observations se situent dans une plage de revenus médians relativement 
+étroite, tandis qu’un nombre plus restreint de tracts affiche des niveaux de revenu très élevés. L’échelle 
+logarithmique met en évidence la structure réelle de cette distribution, qui serait difficilement interprétable 
+sous une échelle linéaire en raison de la dominance visuelle des valeurs extrêmes.
+Ces résultats confirment que l’environnement économique dans lequel opèrent les algorithmes de décision de crédit 
+est loin d’être homogène. Ils fournissent une base empirique essentielle pour l’analyse des disparités territoriales 
+d’accès au crédit, en montrant que les décisions algorithmiques s’inscrivent dans un espace de fortes inégalités de 
+richesse locale. Cette hétérogénéité constitue un élément central pour interpréter les résultats ultérieurs relatifs 
+aux biais potentiels et aux mécanismes de fairness.
+
+En bref, La distribution du revenu médian des tracts, représentée en échelle logarithmique, met en évidence une forte 
+asymétrie et une hétérogénéité marquée des territoires. La majorité des zones se situent dans des niveaux de revenu 
+intermédiaires, tandis qu’une minorité de tracts concentre des niveaux de richesse nettement plus élevés, soulignant 
+l’importance du contexte territorial dans l’analyse des décisions de crédit.
+'''
+"

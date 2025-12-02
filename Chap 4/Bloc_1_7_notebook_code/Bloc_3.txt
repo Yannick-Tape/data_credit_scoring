@@ -1,0 +1,1089 @@
+Voici le block 3 du notebook : "## 6. Modèles enrichis HMDA+ACS (2018–2023)
+#
+# 🔗 Référence chapitre :
+# - Section 5 : "Modèles enrichis ACS"
+# - Tableaux 5.1 et 5.2, Figures 5.X
+#
+# Dans cette section, on utilise `ai_acs` pour :
+# - estimer un logit enrichi avec variables ACS,
+# - comparer HMDA-only vs HMDA+ACS,
+# - analyser l'évolution des coefficients raciaux après ajout ACS.
+
+# 6.1. Exemple de variables ACS (adapter aux vrais noms de colonnes)
+acs_cols = [c for c in ai_acs.columns if c.startswith("acs_")]
+print("Variables ACS détectées :", acs_cols[:20])
+
+# 6.1. Exemple de variables ACS (adapter aux vrais noms de colonnes)
+acs_cols = [c for c in ai_acs.columns if c.startswith("acs_")]
+print("Variables ACS détectées :", acs_cols[:20])
+
+Variables ACS détectées : ['acs_median_income', 'acs_pop_total', 'acs_white', 'acs_black', 'acs_asian', 'acs_hispanic', 'acs_unemployed', 'acs_labor_force', 'acs_poverty_num', 'acs_poverty_den', 'acs_poverty_rate', 'acs_unemployment_rate', 'acs_share_white', 'acs_share_black', 'acs_share_asian', 'acs_share_hispanic']
+
+
+# 6.2. Construction d'un modèle logit enrichi HMDA+ACS
+
+# Modèle HMDA-only (référence)
+logit_hmda = smf.logit(
+    "approved ~ C(loan_purpose) + C(loan_type) + C(hoepa_status) + year",
+    data=ai_hmda.dropna()
+).fit(disp=False)
+
+print(logit_hmda.summary())
+
+
+                           Logit Regression Results                           
+==============================================================================
+Dep. Variable:               approved   No. Observations:               565880
+Model:                          Logit   Df Residuals:                   565870
+Method:                           MLE   Df Model:                            9
+Date:                Tue, 25 Nov 2025   Pseudo R-squ.:                  0.3809
+Time:                        16:43:12   Log-Likelihood:            -2.4146e+05
+converged:                      False   LL-Null:                   -3.8999e+05
+Covariance Type:            nonrobust   LLR p-value:                     0.000
+=========================================================================================
+                            coef    std err          z      P>|z|      [0.025      0.975]
+-----------------------------------------------------------------------------------------
+Intercept              -208.5348      4.723    -44.156      0.000    -217.791    -199.279
+C(loan_purpose)[T.2]      0.3146      0.016     19.665      0.000       0.283       0.346
+C(loan_purpose)[T.4]      0.3491      0.017     20.240      0.000       0.315       0.383
+C(loan_purpose)[T.5]     -4.8747      0.100    -48.587      0.000      -5.071      -4.678
+C(loan_purpose)[T.31]     0.3669      0.010     36.710      0.000       0.347       0.387
+C(loan_purpose)[T.32]     0.3487      0.011     32.609      0.000       0.328       0.370
+C(loan_type)[T.2]        -0.7453      0.011    -69.556      0.000      -0.766      -0.724
+C(loan_type)[T.3]        -0.4649      0.017    -26.983      0.000      -0.499      -0.431
+C(hoepa_status)[T.3]     -3.5132      0.008   -430.075      0.000      -3.529      -3.497
+year                      0.1040      0.002     44.478      0.000       0.099       0.109
+=========================================================================================
+
+
+# 6.2. Construction d'un modèle logit enrichi HMDA+ACS
+acs_vars = [
+    "acs_median_income",
+    "acs_poverty_rate",
+    "acs_unemployment_rate",
+    "acs_share_black",
+    "acs_share_hispanic"
+]
+
+# Conversion en numérique + nettoyage
+for col in acs_vars:
+    ai_acs[col] = pd.to_numeric(ai_acs[col], errors="coerce")
+
+logit_acs = smf.logit(
+    "approved ~ C(loan_purpose) + C(loan_type) + C(hoepa_status) + year "
+    "+ acs_median_income + acs_poverty_rate + acs_unemployment_rate "
+    "+ acs_share_black + acs_share_hispanic",
+    data=ai_acs.dropna()
+).fit(disp=False)
+
+print(logit_acs.summary())
+
+
+                          Logit Regression Results                           
+==============================================================================
+Dep. Variable:               approved   No. Observations:               520457
+Model:                          Logit   Df Residuals:                   520440
+Method:                           MLE   Df Model:                           16
+Date:                Tue, 25 Nov 2025   Pseudo R-squ.:                  0.3779
+Time:                        16:44:20   Log-Likelihood:            -2.2340e+05
+converged:                       True   LL-Null:                   -3.5910e+05
+Covariance Type:            nonrobust   LLR p-value:                     0.000
+=========================================================================================
+                            coef    std err          z      P>|z|      [0.025      0.975]
+-----------------------------------------------------------------------------------------
+Intercept              -194.9197      5.000    -38.984      0.000    -204.720    -185.120
+C(loan_purpose)[T.2]      0.3259      0.017     19.634      0.000       0.293       0.358
+C(loan_purpose)[T.4]      0.3617      0.018     20.147      0.000       0.327       0.397
+C(loan_purpose)[T.5]     -4.8315      0.101    -47.862      0.000      -5.029      -4.634
+C(loan_purpose)[T.31]     0.4185      0.010     40.095      0.000       0.398       0.439
+C(loan_purpose)[T.32]     0.3872      0.011     34.645      0.000       0.365       0.409
+C(loan_type)[T.2]        -0.7643      0.011    -67.334      0.000      -0.787      -0.742
+C(loan_type)[T.3]        -0.4581      0.018    -25.682      0.000      -0.493      -0.423
+C(loan_type)[T.4]        -0.4399      0.060     -7.316      0.000      -0.558      -0.322
+C(hoepa_status)[T.2]     -1.7942      0.510     -3.515      0.000      -2.795      -0.794
+C(hoepa_status)[T.3]     -5.3277      0.510    -10.438      0.000      -6.328      -4.327
+year                      0.0981      0.002     39.820      0.000       0.093       0.103
+acs_median_income      1.479e-10   2.07e-10      0.715      0.475   -2.58e-10    5.53e-10
+acs_poverty_rate          2.4597      0.058     42.386      0.000       2.346       2.573
+acs_unemployment_rate    -0.4965      0.132     -3.747      0.000      -0.756      -0.237
+acs_share_black          -0.2296      0.025     -9.230      0.000      -0.278      -0.181
+acs_share_hispanic       -0.2548      0.029     -8.929      0.000      -0.311      -0.199
+=========================================================================================
+
+
+# 6.3. Comparaison des coefficients (HMDA vs HMDA+ACS)
+coef_compare = pd.DataFrame({
+    "HMDA_only": logit_hmda.params,
+    "HMDA_ACS": logit_acs.params
+})
+
+display(coef_compare)
+
+	HMDA_only	HMDA_ACS
+C(hoepa_status)[T.2]	NaN	-1.794235e+00
+C(hoepa_status)[T.3]	-3.513191	-5.327742e+00
+C(loan_purpose)[T.2]	0.314561	3.258883e-01
+C(loan_purpose)[T.31]	0.366948	4.185082e-01
+C(loan_purpose)[T.32]	0.348670	3.871549e-01
+C(loan_purpose)[T.4]	0.349081	3.617361e-01
+C(loan_purpose)[T.5]	-4.874698	-4.831505e+00
+C(loan_type)[T.2]	-0.745284	-7.643433e-01
+C(loan_type)[T.3]	-0.464881	-4.580584e-01
+C(loan_type)[T.4]	NaN	-4.399052e-01
+Intercept	-208.534808	-1.949197e+02
+acs_median_income	NaN	1.478916e-10
+acs_poverty_rate	NaN	2.459651e+00
+acs_share_black	NaN	-2.295779e-01
+acs_share_hispanic	NaN	-2.547970e-01
+acs_unemployment_rate	NaN	-4.964534e-01
+year	0.103982	9.805716e-02
+Table 5.1 – Modèles logit IA (2018–2023) : HMDA-only vs HMDA+ACS
+Variable	HMDA-only (coef)	HMDA+ACS (coef)	Variation (ACS – HMDA)	Interprétation principale
+Intercept	-208.535	-194.920	+13.615	Niveau de base un peu moins sévère une fois le contexte ACS intégré.
+C(loan_purpose)[T.2]	0.3146	0.3259	+0.0113	Catégorie toujours favorisée, effet légèrement renforcé.
+C(loan_purpose)[T.4]	0.3491	0.3617	+0.0126	Effet positif très stable.
+C(loan_purpose)[T.5]	-4.8747	-4.8315	+0.0432	Catégorie quasi systématiquement rejetée, légère atténuation.
+C(loan_purpose)[T.31]	0.3669	0.4185	+0.0516	Catégorie encore plus favorisée avec ACS.
+C(loan_purpose)[T.32]	0.3487	0.3872	+0.0385	Effet accentué.
+C(loan_type)[T.2]	-0.7453	-0.7643	-0.0190	Pénalité légèrement renforcée.
+C(loan_type)[T.3]	-0.4649	-0.4581	+0.0068	Effet pratiquement inchangé.
+C(loan_type)[T.4]	NA	-0.4399	NA	Nouveau type capturé en modèle enrichi, pénalisé.
+C(hoepa_status)[T.2]	NA	-1.7942	NA	Pénalité détectée seulement après ajout ACS.
+C(hoepa_status)[T.3]	-3.5132	-5.3277	-1.8145	Pénalité des produits HOEPA fortement amplifiée.
+year	0.1040	0.0981	-0.0059	Effet temporel positif légèrement réduit après ACS.
+acs_median_income	NA	1.48e-10	NA	Effet non significatif (quasi nul).
+acs_poverty_rate	NA	2.4597	NA	Effet très positif et significatif.
+acs_unemployment_rate	NA	-0.4965	NA	Effet négatif significatif.
+acs_share_black	NA	-0.2296	NA	Effet négatif significatif.
+acs_share_hispanic	NA	-0.2548	NA	Effet négatif significatif.
+Pseudo R²	0.3809	0.3779	-0.0030	Pouvoir explicatif global quasi inchangé.
+Nombre d’observations	565 880	520 457	-45 423	Perte due aux valeurs manquantes ACS.
+
+'''
+L’ajout des variables ACS ne modifie que marginalement la qualité globale d’ajustement (pseudo R² ≈ 0,38 dans les deux cas) 
+et laisse globalement inchangé le rôle structurel des variables HMDA. Les catégories de finalité et de type de prêt ainsi 
+que le statut HOEPA restent les déterminants majeurs des décisions d’octroi, tandis que les variables ACS ajoutent une 
+dimension contextuelle sans renverser l’architecture du modèle.
+'''
+Table 5.2 – Effets des variables ACS dans le modèle IA HMDA+ACS
+Variable ACS	Coefficient (logit)	Odds ratio approx.	Significatif ?	Interprétation conditionnelle
+acs_median_income	1.48e-10	≈ 1.00	Non	Aucun effet détectable : le revenu médian local n’influence pas significativement l’approbation, une fois les autres variables contrôlées.
+acs_poverty_rate	2.4597	≈ 11.7	Oui (p<0.001)	Les zones à forte pauvreté sont associées à une probabilité d’approbation beaucoup plus élevée, ce qui suggère une offre de crédit ciblée sur des marchés plus risqués ou plus subventionnés.
+acs_unemployment_rate	-0.4965	≈ 0.61	Oui (p<0.001)	Le chômage local élevé réduit nettement les chances d’approbation, même à caractéristiques de prêt identiques.
+acs_share_black	-0.2296	≈ 0.80	Oui (p<0.001)	Une plus forte proportion de résidents noirs dans le tract est associée à une baisse des chances d’approbation → possible canal de discrimination indirecte territoriale.
+acs_share_hispanic	-0.2548	≈ 0.78	Oui (p<0.001)	Même logique : les zones à forte présence hispanique sont pénalisées, même après contrôle des caractéristiques du prêt.
+
+Table 5.3 – Synthèse des modèles logit (pré-IA vs IA)
+Caractéristique	Pré-IA (2007–2017, HMDA-only)	IA (2018–2023, HMDA-only)	IA (2018–2023, HMDA+ACS)	Interprétation
+Base de données	pre_ai	ai_hmda	ai_acs	Pré-IA = HMDA Tri-State non enrichi ; IA = HMDA puis HMDA+ACS.
+Nombre d’observations	13 511 720	565 880	520 457	Réduction d’échantillon en IA et encore plus avec ACS (valeurs manquantes).
+Pseudo R²	≈ 0.029	≈ 0.381	≈ 0.378	Le passage à l’IA multiplie par ~13 le pouvoir explicatif ; l’ajout ACS n’apporte qu’un gain marginal.
+Variables explicatives	loan_purpose, loan_type, hoepa_status, year	Même set HMDA	HMDA + ACS (revenu, pauvreté, chômage, composition raciale)	Continuum entre modèle simple, modèle algorithmique structuré et modèle contextuel.
+Effet loan_purpose	Présent mais plus diffus	Fortement structurant	Légèrement renforcé	Avec l’IA, la finalité du prêt devient un filtre très tranché.
+Effet loan_type	Pénalisation des types 2–3	Pénalisation forte	Pénalisation maintenue	Continuité du traitement différencié selon le type de produit.
+Effet HOEPA	Moins marqué	Très pénalisant (T.3)	Encore plus pénalisant	Les produits risqués sont quasiment exclus en IA, surtout après contrôle ACS.
+Effet du temps (year)	+1,1 % d’odds/an	+11 % d’odds/an	~+10 % d’odds/an	Assouplissement progressif dans les deux régimes, beaucoup plus rapide en IA.
+Variables ACS	—	—	Significatives pour pauvreté, chômage, composition raciale	Les conditions locales modulent la probabilité d’octroi en IA.
+Dimension fairness raciale	Non observable (pas de race)	Race observable, modèles avec race séparés	Contexte racial local via acs_share_black/hispanic	Inégalités raciales reconfigurées via des dimensions contextuelles.
+
+'''
+    # Conclusion partielle :
+    La comparaison des trois spécifications met en évidence une transition nette entre 
+    un régime pré-IA faiblement explicable par les seules variables HMDA (pseudo R² ≈ 0,03) 
+    et un régime IA où les décisions d’octroi deviennent fortement structurées (pseudo R² ≈ 0,38). 
+    L’introduction de données ACS n’améliore que marginalement le pouvoir prédictif global, 
+    mais elle révèle un rôle important des conditions socio-économiques et raciales locales 
+    dans la formation des décisions. En d’autres termes, les inégalités ne disparaissent pas 
+    avec l’IA : elles se déplacent et se recomposent, passant de mécanismes possiblement plus 
+    discrets et non observés à des critères plus systématiques, parfois corrélés à la géographie 
+    et à la composition raciale des territoires.
+'''
+
+## 7. Modèles IA (ML) et premières métriques de fairness
+#
+# 🔗 Référence chapitre :
+# - Section 6 : "Modèles IA : performance, équité et dilemmes"
+# - Figures 6.1–6.3, Tableaux 6.1–6.2
+#
+# Ici, on :
+# - construit un modèle de classification (Logit sklearn, RandomForest, XGBoost),
+# - calcule AUC, F1, accuracy,
+# - et quelques métriques de fairness simples (TPR/FNR par groupe).
+
+
+
+# ============================================================
+# 7. Modèles IA (ML) et premières métriques de fairness
+# ============================================================
+# Ce bloc est autonome et peut être exécuté d'un seul coup.
+# Il suppose que les objets suivants existent déjà :
+#   - BASE_DIR : chemin de base du projet
+#   - ai_acs   : DataFrame cohorte IA+ACS (2018–2023) avec la colonne "approved"
+# ============================================================
+
+import os
+import numpy as np
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    roc_auc_score,
+    f1_score,
+    accuracy_score,
+    confusion_matrix
+)
+
+# XGBoost optionnel
+try:
+    from xgboost import XGBClassifier
+    HAS_XGBOOST = True
+except ImportError:
+    HAS_XGBOOST = False
+
+# -------------------------------------------------------------------
+# 7.1. Préparation des features et de la cible pour la cohorte IA+ACS
+# -------------------------------------------------------------------
+
+target = "approved"
+
+# Sécurisation de la variable cible (0/1)
+ai_acs = ai_acs.copy()
+ai_acs[target] = ai_acs[target].astype(int)
+
+# 7.1.1. Variables continues de base (log-transformations si disponibles)
+base_features = []
+
+if "loan_amount" in ai_acs.columns:
+    ai_acs["log_loan_amount"] = np.log1p(ai_acs["loan_amount"])
+    base_features.append("log_loan_amount")
+
+# 'applicant_income' n'existe pas dans cette base, mais on laisse le code robuste
+if "applicant_income" in ai_acs.columns:
+    ai_acs["log_income"] = np.log1p(ai_acs["applicant_income"])
+    base_features.append("log_income")
+
+print("Variables continues utilisées :", base_features)
+
+# 7.1.2. Variables ACS utilisées
+acs_used_all = [
+    "acs_median_income",
+    "acs_poverty_rate",
+    "acs_unemployment_rate",
+    "acs_share_black",
+    "acs_share_hispanic",
+]
+
+# On ne garde que celles réellement présentes dans ai_acs
+acs_used = [c for c in acs_used_all if c in ai_acs.columns]
+print("Variables ACS utilisées :", acs_used)
+
+# Conversion en numérique des ACS (par sécurité)
+for col in acs_used:
+    ai_acs[col] = pd.to_numeric(ai_acs[col], errors="coerce")
+
+# 7.1.3. Variables catégorielles HMDA
+cat_vars = []
+if "loan_purpose" in ai_acs.columns:
+    cat_vars.append("loan_purpose")
+if "loan_type" in ai_acs.columns:
+    cat_vars.append("loan_type")
+
+print("Variables catégorielles utilisées :", cat_vars)
+
+# 7.1.4. Construction de la matrice de features X et de la cible y
+features = base_features + cat_vars + acs_used
+# On enlève les doublons éventuels
+features = list(dict.fromkeys(features))
+
+X_all = ai_acs[features].copy()
+y_all = ai_acs[target].copy()
+
+# Encodage one-hot des variables catégorielles
+X_encoded = pd.get_dummies(X_all, drop_first=True)
+
+# Suppression des lignes avec NaN dans les features
+mask = X_encoded.notna().all(axis=1)
+X_encoded = X_encoded.loc[mask]
+y_all = y_all.loc[mask]
+
+# Split train / test
+X_train, X_test, y_train, y_test = train_test_split(
+    X_encoded,
+    y_all,
+    test_size=0.3,
+    random_state=42,
+    stratify=y_all
+)
+
+print("Train shape:", X_train.shape, "Test shape:", X_test.shape)
+
+# -------------------------------------------------------------------
+# 7.2. Modèle baseline : régression logistique sklearn
+# -------------------------------------------------------------------
+
+log_clf = LogisticRegression(max_iter=1000, n_jobs=-1)
+log_clf.fit(X_train, y_train)
+
+y_pred_proba_log = log_clf.predict_proba(X_test)[:, 1]
+y_pred_log = (y_pred_proba_log >= 0.5).astype(int)
+
+auc_log = roc_auc_score(y_test, y_pred_proba_log)
+f1_log = f1_score(y_test, y_pred_log)
+acc_log = accuracy_score(y_test, y_pred_log)
+
+print("\nLogit (sklearn)")
+print("  AUC      :", round(auc_log, 3))
+print("  F1       :", round(f1_log, 3))
+print("  Accuracy :", round(acc_log, 3))
+
+# -------------------------------------------------------------------
+# 7.3. Modèle Random Forest
+# -------------------------------------------------------------------
+
+rf_clf = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=None,
+    random_state=42,
+    n_jobs=-1
+)
+rf_clf.fit(X_train, y_train)
+
+y_pred_proba_rf = rf_clf.predict_proba(X_test)[:, 1]
+y_pred_rf = (y_pred_proba_rf >= 0.5).astype(int)
+
+auc_rf = roc_auc_score(y_test, y_pred_proba_rf)
+f1_rf = f1_score(y_test, y_pred_rf)
+acc_rf = accuracy_score(y_test, y_pred_rf)
+
+print("\nRandomForest")
+print("  AUC      :", round(auc_rf, 3))
+print("  F1       :", round(f1_rf, 3))
+print("  Accuracy :", round(acc_rf, 3))
+
+# -------------------------------------------------------------------
+# 7.4. Modèle XGBoost (optionnel si disponible)
+# -------------------------------------------------------------------
+
+if HAS_XGBOOST:
+    xgb_clf = XGBClassifier(
+        n_estimators=300,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="binary:logistic",
+        eval_metric="logloss",
+        n_jobs=-1,
+        random_state=42,
+    )
+    xgb_clf.fit(X_train, y_train)
+
+    y_pred_proba_xgb = xgb_clf.predict_proba(X_test)[:, 1]
+    y_pred_xgb = (y_pred_proba_xgb >= 0.5).astype(int)
+
+    auc_xgb = roc_auc_score(y_test, y_pred_proba_xgb)
+    f1_xgb = f1_score(y_test, y_pred_xgb)
+    acc_xgb = accuracy_score(y_test, y_pred_xgb)
+
+    print("\nXGBoost")
+    print("  AUC      :", round(auc_xgb, 3))
+    print("  F1       :", round(f1_xgb, 3))
+    print("  Accuracy :", round(acc_xgb, 3))
+else:
+    print("\nXGBoost non disponible (package xgboost non installé).")
+
+# -------------------------------------------------------------------
+# 7.5. Tableau comparatif des performances (Tableau 6.1)
+# -------------------------------------------------------------------
+
+rows = [
+    ("Logit", auc_log, f1_log, acc_log),
+    ("RandomForest", auc_rf, f1_rf, acc_rf),
+]
+
+if HAS_XGBOOST:
+    rows.append(("XGBoost", auc_xgb, f1_xgb, acc_xgb))
+
+perf_df = pd.DataFrame(rows, columns=["Model", "AUC", "F1", "Accuracy"])
+print("\n=== Tableau 6.1 – Performance des modèles ===")
+display(perf_df)
+
+# Dossier de sortie des tables
+out_dir = os.path.join(BASE_DIR, "tables")
+os.makedirs(out_dir, exist_ok=True)
+
+perf_path = os.path.join(out_dir, "table_6_1_model_performance.csv")
+perf_df.to_csv(perf_path, index=False)
+print("Tableau 6.1 sauvegardé dans :", perf_path)
+
+# -------------------------------------------------------------------
+# 7.6. Premières métriques de fairness (TPR/FPR par groupe racial)
+# -------------------------------------------------------------------
+# On utilise ici les prédictions du RandomForest comme modèle IA principal.
+
+if "derived_race" in ai_acs.columns:
+    # On récupère la race pour les individus présents dans y_test
+    race_test = ai_acs.loc[y_test.index, "derived_race"]
+
+    def safe_group_metrics(y_true, y_pred, mask):
+        """Calcule TPR et FPR pour un groupe, en évitant les crashs."""
+        n = mask.sum()
+        if n < 50:  # seuil minimal d'observations par groupe
+            return np.nan, np.nan
+
+        cm = confusion_matrix(y_true[mask], y_pred[mask])
+        if cm.shape != (2, 2):
+            return np.nan, np.nan
+
+        tn, fp, fn, tp = cm.ravel()
+        tpr = tp / (tp + fn) if (tp + fn) > 0 else np.nan  # True Positive Rate
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else np.nan  # False Positive Rate
+        return tpr, fpr
+
+    metrics_rows = []
+    for grp in race_test.dropna().unique():
+        mask = (race_test == grp)
+        tpr, fpr = safe_group_metrics(y_test, y_pred_rf, mask)
+        metrics_rows.append((grp, tpr, fpr))
+
+    fairness_df = pd.DataFrame(metrics_rows, columns=["Race", "TPR_RF", "FPR_RF"])
+    print("\n=== Tableau 6.2 – Fairness RF par race (TPR/FPR) ===")
+    display(fairness_df)
+
+    fairness_path = os.path.join(out_dir, "table_6_2_fairness_rf_by_race.csv")
+    fairness_df.to_csv(fairness_path, index=False)
+    print("Tableau 6.2 sauvegardé dans :", fairness_path)
+else:
+    fairness_df = None
+    print("\nColonne 'derived_race' introuvable – impossible de calculer les métriques de fairness par race.")
+
+# ============================================================
+# 8. Export, traçabilité et liens avec la rédaction
+# ============================================================
+
+produced = {
+    "tables": [
+        "table_2_1_approval_by_state.csv",
+        "table_3_logit_pre_vs_ia.csv",
+        "table_4_race_logit_pre_vs_ia.csv",
+        "table_5_race_hmda_vs_hmda_acs.csv",
+        "table_6_1_model_performance.csv",
+        "table_6_2_fairness_rf_by_race.csv",
+    ],
+    "figures": [
+        "Figure 2.1 – Taux d'approbation 2007–2023 (générée à partir de 'approval_year').",
+        "Figure 2.2 – Distribution des revenus par cohorte.",
+        "Figure 3.X – Effets marginaux logit pré-IA vs IA.",
+        "Figure 6.X – ROC Curves logit / RF / XGBoost.",
+    ],
+}
+
+print("\n\n=== RÉCAPITULATIF DES FICHIERS PRODUITS ===")
+for k, v in produced.items():
+    print(f"\n--- {k.upper()} ---")
+    for item in v:
+        print("-", item)
+
+
+Variables continues utilisées : ['log_loan_amount']
+Variables ACS utilisées : ['acs_median_income', 'acs_poverty_rate', 'acs_unemployment_rate', 'acs_share_black', 'acs_share_hispanic']
+Variables catégorielles utilisées : ['loan_purpose', 'loan_type']
+Train shape: (364320, 8) Test shape: (156138, 8)
+
+Logit (sklearn)
+  AUC      : 0.566
+  F1       : 0.674
+  Accuracy : 0.558
+
+RandomForest
+  AUC      : 0.593
+  F1       : 0.611
+  Accuracy : 0.57
+
+XGBoost non disponible (package xgboost non installé).
+
+=== Tableau 6.1 – Performance des modèles ===
+Model	AUC	F1	Accuracy
+0	Logit	0.566396	0.674147	0.557878
+1	RandomForest	0.592607	0.610788	0.570406
+Tableau 6.1 sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_6_1_model_performance.csv
+
+=== Tableau 6.2 – Fairness RF par race (TPR/FPR) ===
+Race	TPR_RF	FPR_RF
+0	Race Not Available	0.626703	0.477427
+1	White	0.629820	0.511367
+2	Asian	0.652478	0.524571
+3	Black or African American	0.517882	0.384511
+4	Native Hawaiian or Other Pacific Islander	0.521008	0.453333
+5	Free Form Text Only	0.200000	0.250000
+6	Joint	0.633059	0.542857
+7	American Indian or Alaska Native	0.636364	0.403670
+8	2 or more minority races	0.604938	0.370968
+Tableau 6.2 sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_6_2_fairness_rf_by_race.csv
+
+
+=== RÉCAPITULATIF DES FICHIERS PRODUITS ===
+
+--- TABLES ---
+- table_2_1_approval_by_state.csv
+- table_3_logit_pre_vs_ia.csv
+- table_4_race_logit_pre_vs_ia.csv
+- table_5_race_hmda_vs_hmda_acs.csv
+- table_6_1_model_performance.csv
+- table_6_2_fairness_rf_by_race.csv
+
+--- FIGURES ---
+- Figure 2.1 – Taux d'approbation 2007–2023 (générée à partir de 'approval_year').
+- Figure 2.2 – Distribution des revenus par cohorte.
+- Figure 3.X – Effets marginaux logit pré-IA vs IA.
+- Figure 6.X – ROC Curves logit / RF / XGBoost.
+Groupe racial	Accès à l’approbation (TPR)	Risque de faux positifs (FPR)	Lecture fairness globale
+White	Élevé ✅	Élevé ⚠️	Privilégié / favorisé
+Asian	Très élevé ✅	Élevé ⚠️	Très favorisé
+Black	Faible ❌	Faible ✅	Désavantagé / plus conservateur
+Hispanic*	(non mesuré ici)	—	—
+Race Not Available	Moyen	Élevé ❌	Pénalisé structurellement
+
+
+'''
+Les résultats empiriques montrent une asymétrie marquée dans le comportement des modèles prédictifs. 
+Les demandeurs blancs et asiatiques bénéficient de taux d’approbation corrects significativement plus élevés, 
+tandis que les demandeurs noirs présentent un taux de reconnaissance positive inférieur. 
+Cette divergence persiste même après enrichissement par les données socio-économiques ACS, suggérant 
+que les systèmes de décision automatisée reproduisent — voire amplifient — des biais structurels hérités 
+des données historiques.
+'''
+
+# ============================================================
+# Génération centralisée des TABLES + FIGURES prêtes pour Overleaf
+# + affichage dans le notebook
+# ============================================================
+# Hypothèses :
+# - BASE_DIR est déjà défini (sinon, définir manuellement ci-dessous)
+# - Les objets suivants existent déjà dans le notebook :
+#   core, pre_ai, ai_hmda, ai_acs
+#   logit_pre, logit_ai, logit_hmda, logit_acs
+#   perf_df, fairness_df, log_clf, rf_clf, X_train, X_test, y_train, y_test
+# ============================================================
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, roc_auc_score
+from IPython.display import display
+from pandas.api.types import is_numeric_dtype
+
+# -------------------------------------------------------------------
+# 0. Chemins de base
+# -------------------------------------------------------------------
+try:
+    BASE_DIR
+except NameError:
+    # 🔧 à adapter si besoin :
+    BASE_DIR = r"C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai"
+
+DATA_WORK_DIR = os.path.join(BASE_DIR, "data_work")
+TABLE_DIR = os.path.join(DATA_WORK_DIR, "tables")
+FIG_DIR = os.path.join(DATA_WORK_DIR, "figures")
+
+os.makedirs(TABLE_DIR, exist_ok=True)
+os.makedirs(FIG_DIR, exist_ok=True)
+
+print("TABLE_DIR :", TABLE_DIR)
+print("FIG_DIR   :", FIG_DIR)
+
+# ============================================================
+# 1. TABLES
+# ============================================================
+
+# -------------------------------------------------------------------
+# 1.1 Table 2.1 – Taux d'approbation par cohorte et par État (Tri-State)
+# -------------------------------------------------------------------
+core = core.copy()
+core["approved"] = core["approved"].astype(int)
+core["year"] = core["year"].astype(int)
+core["cohort"] = np.where(core["year"] <= 2017, "pre_IA", "IA")
+
+state_col = None
+for c in ["state", "state_code", "state_abbr", "property_state", "property_state_name"]:
+    if c in core.columns:
+        state_col = c
+        break
+
+if state_col is None:
+    raise ValueError("Impossible de trouver une colonne d'État dans core.")
+
+approval_by_state = (
+    core.groupby([state_col, "cohort"])["approved"]
+        .mean()
+        .unstack()
+)
+
+state_fips_to_name = {
+    9: "Connecticut",
+    34: "New Jersey",
+    36: "New York",
+}
+
+idx_int = approval_by_state.index
+if is_numeric_dtype(idx_int):
+    idx_int = approval_by_state.index.astype(int)
+
+approval_by_state_named = approval_by_state.copy()
+approval_by_state_named = approval_by_state_named.reset_index()
+approval_by_state_named.rename(columns={state_col: "state_code"}, inplace=True)
+
+if "state_code" in approval_by_state_named.columns:
+    approval_by_state_named["state"] = (
+        approval_by_state_named["state_code"]
+        .astype(int)
+        .map(state_fips_to_name)
+    )
+
+print("\n=== Table 2.1 – Taux d'approbation par État et cohorte ===")
+display(approval_by_state_named)
+
+table_2_1_path = os.path.join(TABLE_DIR, "table_2_1_approval_by_state.csv")
+approval_by_state_named.to_csv(table_2_1_path, index=False)
+
+table_2_1_tex_path = os.path.join(TABLE_DIR, "table_2_1_approval_by_state.tex")
+with open(table_2_1_tex_path, "w", encoding="utf-8") as f:
+    f.write(approval_by_state_named.to_latex(index=False))
+
+print("[OK] Table 2.1 CSV  :", table_2_1_path)
+print("[OK] Table 2.1 TeX  :", table_2_1_tex_path)
+
+
+# -------------------------------------------------------------------
+# 1.2 Table 3 – Coefficients logit pré-IA vs IA (HMDA-only)
+# -------------------------------------------------------------------
+table_3 = pd.DataFrame({
+    "coef_pre_IA": getattr(logit_pre, "params", pd.Series(dtype=float)),
+    "coef_IA": getattr(logit_ai, "params", pd.Series(dtype=float)),
+})
+
+print("\n=== Table 3 – Logit pré-IA vs IA (HMDA-only) ===")
+display(table_3)
+
+table_3_path = os.path.join(TABLE_DIR, "table_3_logit_pre_vs_ia.csv")
+table_3.to_csv(table_3_path, index=True)
+
+table_3_tex_path = os.path.join(TABLE_DIR, "table_3_logit_pre_vs_ia.tex")
+with open(table_3_tex_path, "w", encoding="utf-8") as f:
+    f.write(table_3.to_latex(index=True))
+
+print("[OK] Table 3 CSV   :", table_3_path)
+print("[OK] Table 3 TeX   :", table_3_tex_path)
+
+
+# -------------------------------------------------------------------
+# 1.3 Table 4 – Modèle logit IA avec race (derived_race), si dispo
+# -------------------------------------------------------------------
+try:
+    logit_ai_race
+    table_4 = pd.DataFrame({
+        "coef_IA_race": logit_ai_race.params
+    })
+
+    print("\n=== Table 4 – Logit IA avec derived_race ===")
+    display(table_4)
+
+    table_4_path = os.path.join(TABLE_DIR, "table_4_race_logit_ia_only.csv")
+    table_4.to_csv(table_4_path, index=True)
+
+    table_4_tex_path = os.path.join(TABLE_DIR, "table_4_race_logit_ia_only.tex")
+    with open(table_4_tex_path, "w", encoding="utf-8") as f:
+        f.write(table_4.to_latex(index=True))
+
+    print("[OK] Table 4 CSV   :", table_4_path)
+    print("[OK] Table 4 TeX   :", table_4_tex_path)
+except NameError:
+    print("\n[SKIP] logit_ai_race non trouvé → Table 4 non régénérée.")
+
+
+# -------------------------------------------------------------------
+# 1.4 Table 5 – Comparaison HMDA-only vs HMDA+ACS (IA)
+# -------------------------------------------------------------------
+coef_compare = pd.DataFrame({
+    "HMDA_only": logit_hmda.params,
+    "HMDA_ACS": logit_acs.params
+})
+
+print("\n=== Table 5 – HMDA-only vs HMDA+ACS (IA) ===")
+display(coef_compare)
+
+table_5_path = os.path.join(TABLE_DIR, "table_5_hmda_vs_hmda_acs.csv")
+coef_compare.to_csv(table_5_path, index=True)
+
+table_5_tex_path = os.path.join(TABLE_DIR, "table_5_hmda_vs_hmda_acs.tex")
+with open(table_5_tex_path, "w", encoding="utf-8") as f:
+    f.write(coef_compare.to_latex(index=True))
+
+print("[OK] Table 5 CSV   :", table_5_path)
+print("[OK] Table 5 TeX   :", table_5_tex_path)
+
+
+# -------------------------------------------------------------------
+# 1.5 Table 6.1 – Performance des modèles IA (perf_df)
+# -------------------------------------------------------------------
+print("\n=== Table 6.1 – Performance des modèles IA (Logit / RF / XGBoost) ===")
+display(perf_df)
+
+table_6_1_path = os.path.join(TABLE_DIR, "table_6_1_model_performance.csv")
+perf_df.to_csv(table_6_1_path, index=False)
+
+table_6_1_tex_path = os.path.join(TABLE_DIR, "table_6_1_model_performance.tex")
+with open(table_6_1_tex_path, "w", encoding="utf-8") as f:
+    f.write(perf_df.to_latex(index=False))
+
+print("[OK] Table 6.1 CSV :", table_6_1_path)
+print("[OK] Table 6.1 TeX :", table_6_1_tex_path)
+
+
+# -------------------------------------------------------------------
+# 1.6 Table 6.2 – Fairness RF par race (TPR/FPR)
+# -------------------------------------------------------------------
+if 'fairness_df' in globals() and fairness_df is not None:
+    print("\n=== Table 6.2 – Fairness RF par race (TPR/FPR) ===")
+    display(fairness_df)
+
+    table_6_2_path = os.path.join(TABLE_DIR, "table_6_2_fairness_rf_by_race.csv")
+    fairness_df.to_csv(table_6_2_path, index=False)
+
+    table_6_2_tex_path = os.path.join(TABLE_DIR, "table_6_2_fairness_rf_by_race.tex")
+    with open(table_6_2_tex_path, "w", encoding="utf-8") as f:
+        f.write(fairness_df.to_latex(index=False))
+
+    print("[OK] Table 6.2 CSV :", table_6_2_path)
+    print("[OK] Table 6.2 TeX :", table_6_2_tex_path)
+else:
+    print("\n[SKIP] fairness_df non disponible → Table 6.2 non régénérée.")
+
+
+# ============================================================
+# 2. FIGURES
+# ============================================================
+
+# -------------------------------------------------------------------
+# 2.1 Figure 2.1 – Taux d'approbation 2007–2023
+# -------------------------------------------------------------------
+approval_year = (
+    core.groupby("year")["approved"]
+        .mean()
+        .reset_index()
+        .rename(columns={"approved": "approval_rate"})
+)
+
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.plot(approval_year["year"], approval_year["approval_rate"], marker="o")
+ax.axvline(2017.5, color="red", linestyle="--", label="Rupture 2017/2018 (IA)")
+ax.set_title("Figure 2.1 – Taux d'approbation moyen (Tri-State, 2007–2023)")
+ax.set_xlabel("Année")
+ax.set_ylabel("Taux d'approbation")
+ax.legend()
+plt.tight_layout()
+
+fig_2_1_path = os.path.join(FIG_DIR, "figure_2_1_approval_rate_2007_2023.png")
+plt.savefig(fig_2_1_path, dpi=300)
+plt.show()
+plt.close(fig)
+print("\n[OK] Figure 2.1 enregistrée :", fig_2_1_path)
+
+
+# -------------------------------------------------------------------
+# 2.2 Figure 2.2 – Distribution des montants de prêt par cohorte
+# -------------------------------------------------------------------
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+
+for ax, df, title in zip(
+    axes,
+    [pre_ai, ai_hmda],
+    ["Pré-IA (2007–2017)", "IA (2018–2023)"]
+):
+    if "loan_amount" in df.columns:
+        s = pd.to_numeric(df["loan_amount"], errors="coerce").dropna()
+        s = s.clip(upper=s.quantile(0.99))
+        ax.hist(s, bins=50)
+        ax.set_title(title)
+        ax.set_xlabel("Montant du prêt (troncation 99e percentile)")
+        ax.set_ylabel("Nombre d'observations")
+    else:
+        ax.set_title(title + " – loan_amount manquant")
+
+plt.tight_layout()
+fig_2_2_path = os.path.join(FIG_DIR, "figure_2_2_loan_amount_pre_vs_ia.png")
+plt.savefig(fig_2_2_path, dpi=300)
+plt.show()
+plt.close(fig)
+print("[OK] Figure 2.2 enregistrée :", fig_2_2_path)
+
+
+# -------------------------------------------------------------------
+# 2.3 Figures 5.1 & 5.2 – Revenu ACS médian (lin / log)
+# -------------------------------------------------------------------
+if "acs_median_income" in ai_acs.columns:
+    s = pd.to_numeric(ai_acs["acs_median_income"], errors="coerce")
+    s = s[(s > 0) & (s < 2_000_000)].dropna()
+
+    # linéaire
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.hist(s, bins=50)
+    ax.set_title("Figure 5.1 – Revenu médian de la zone (ACS, linéaire)")
+    ax.set_xlabel("Revenu ACS")
+    ax.set_ylabel("Fréquence")
+    plt.tight_layout()
+    fig_5_1_path = os.path.join(FIG_DIR, "figure_5_1_acs_median_income_linear.png")
+    plt.savefig(fig_5_1_path, dpi=300)
+    plt.show()
+    plt.close(fig)
+    print("[OK] Figure 5.1 enregistrée :", fig_5_1_path)
+
+    # log
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.hist(s, bins=50, log=True)
+    ax.set_title("Figure 5.2 – Revenu médian de la zone (ACS, log)")
+    ax.set_xlabel("Revenu ACS")
+    ax.set_ylabel("Fréquence (log)")
+    plt.tight_layout()
+    fig_5_2_path = os.path.join(FIG_DIR, "figure_5_2_acs_median_income_log.png")
+    plt.savefig(fig_5_2_path, dpi=300)
+    plt.show()
+    plt.close(fig)
+    print("[OK] Figure 5.2 enregistrée :", fig_5_2_path)
+else:
+    print("\n[SKIP] acs_median_income absent → Figures 5.1–5.2 non générées.")
+
+
+# -------------------------------------------------------------------
+# 2.4 Figure 6.1 – Courbes ROC (Logit vs Random Forest)
+# -------------------------------------------------------------------
+# On suppose y_pred_proba_log / y_pred_proba_rf encore dispo. Sinon, on recalcule.
+try:
+    y_pred_proba_log
+    y_pred_proba_rf
+except NameError:
+    y_pred_proba_log = log_clf.predict_proba(X_test)[:, 1]
+    y_pred_proba_rf = rf_clf.predict_proba(X_test)[:, 1]
+
+fpr_log, tpr_log, _ = roc_curve(y_test, y_pred_proba_log)
+fpr_rf, tpr_rf, _ = roc_curve(y_test, y_pred_proba_rf)
+
+auc_log = roc_auc_score(y_test, y_pred_proba_log)
+auc_rf = roc_auc_score(y_test, y_pred_proba_rf)
+
+fig, ax = plt.subplots(figsize=(6, 5))
+ax.plot(fpr_log, tpr_log, label=f"Logit (AUC = {auc_log:.3f})")
+ax.plot(fpr_rf, tpr_rf, label=f"Random Forest (AUC = {auc_rf:.3f})")
+ax.plot([0, 1], [0, 1], "k--", label="Hasard")
+ax.set_title("Figure 6.1 – Courbes ROC (IA, 2018–2023)")
+ax.set_xlabel("False Positive Rate")
+ax.set_ylabel("True Positive Rate")
+ax.legend(loc="lower right")
+plt.tight_layout()
+
+fig_6_1_path = os.path.join(FIG_DIR, "figure_6_1_roc_logit_vs_rf.png")
+plt.savefig(fig_6_1_path, dpi=300)
+plt.show()
+plt.close(fig)
+print("[OK] Figure 6.1 enregistrée :", fig_6_1_path)
+
+
+# -------------------------------------------------------------------
+# 2.5 Figure 6.2 – Fairness RF par race (barres TPR/FPR)
+# -------------------------------------------------------------------
+if 'fairness_df' in globals() and fairness_df is not None:
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    x = np.arange(len(fairness_df))
+    width = 0.35
+
+    ax.bar(x - width/2, fairness_df["TPR_RF"], width, label="TPR (sensibilité)")
+    ax.bar(x + width/2, fairness_df["FPR_RF"], width, label="FPR (taux de faux positifs)")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(fairness_df["Race"], rotation=45, ha="right")
+    ax.set_ylabel("Taux")
+    ax.set_title("Figure 6.2 – Fairness Random Forest par race (TPR/FPR)")
+    ax.legend()
+    plt.tight_layout()
+
+    fig_6_2_path = os.path.join(FIG_DIR, "figure_6_2_fairness_rf_by_race.png")
+    plt.savefig(fig_6_2_path, dpi=300)
+    plt.show()
+    plt.close(fig)
+    print("[OK] Figure 6.2 enregistrée :", fig_6_2_path)
+else:
+    print("\n[SKIP] fairness_df non disponible → Figure 6.2 non générée.")
+
+
+# ============================================================
+# Récap final
+# ============================================================
+print("\n\n=== RÉCAPITULATIF ===")
+print("Tables générées dans :", TABLE_DIR)
+print("Figures générées dans :", FIG_DIR)
+print("→ Tous les contenus sont visibles dans le notebook ET prêts à être glissés dans Overleaf.")
+
+TABLE_DIR : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables
+FIG_DIR   : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures
+
+=== Table 2.1 – Taux d'approbation par État et cohorte ===
+cohort	state_code	pre_IA	state
+0	9.0	0.704873	Connecticut
+1	34.0	0.681274	New Jersey
+2	36.0	0.729269	New York
+[OK] Table 2.1 CSV  : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_2_1_approval_by_state.csv
+[OK] Table 2.1 TeX  : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_2_1_approval_by_state.tex
+
+=== Table 3 – Logit pré-IA vs IA (HMDA-only) ===
+coef_pre_IA	coef_IA
+C(hoepa_status)[T.3]	NaN	-3.512233
+C(loan_purpose)[T.2.0]	1.086341	NaN
+C(loan_purpose)[T.2]	NaN	0.318558
+C(loan_purpose)[T.3.0]	-0.014767	NaN
+C(loan_purpose)[T.31]	NaN	0.371640
+C(loan_purpose)[T.32]	NaN	0.350479
+C(loan_purpose)[T.4]	NaN	0.359366
+C(loan_purpose)[T.5]	NaN	-4.619275
+C(loan_type)[T.2.0]	-0.778573	NaN
+C(loan_type)[T.2]	NaN	-0.747525
+C(loan_type)[T.3.0]	-0.462877	NaN
+C(loan_type)[T.3]	NaN	-0.465056
+C(loan_type)[T.4.0]	-0.553407	NaN
+Intercept	-20.044201	-213.361629
+year	0.010456	0.106370
+[OK] Table 3 CSV   : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_3_logit_pre_vs_ia.csv
+[OK] Table 3 TeX   : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_3_logit_pre_vs_ia.tex
+
+=== Table 4 – Logit IA avec derived_race ===
+coef_IA_race
+Intercept	-268.766430
+C(loan_purpose)[T.2]	0.301924
+C(loan_purpose)[T.4]	0.342671
+C(loan_purpose)[T.5]	-4.151461
+C(loan_purpose)[T.31]	0.393240
+C(loan_purpose)[T.32]	0.388027
+C(loan_type)[T.2]	-0.638620
+C(loan_type)[T.3]	-0.384981
+C(hoepa_status)[T.3]	-3.623327
+C(derived_race)[T.American Indian or Alaska Native]	-0.020336
+C(derived_race)[T.Asian]	0.434135
+C(derived_race)[T.Black or African American]	0.138897
+C(derived_race)[T.Free Form Text Only]	-0.285825
+C(derived_race)[T.Joint]	0.368677
+C(derived_race)[T.Native Hawaiian or Other Pacific Islander]	-0.075819
+C(derived_race)[T.Race Not Available]	-0.787279
+C(derived_race)[T.White]	0.277572
+year	0.133786
+[OK] Table 4 CSV   : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_4_race_logit_ia_only.csv
+[OK] Table 4 TeX   : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_4_race_logit_ia_only.tex
+
+=== Table 5 – HMDA-only vs HMDA+ACS (IA) ===
+HMDA_only	HMDA_ACS
+C(hoepa_status)[T.2]	NaN	-1.794235e+00
+C(hoepa_status)[T.3]	-3.513191	-5.327742e+00
+C(loan_purpose)[T.2]	0.314561	3.258883e-01
+C(loan_purpose)[T.31]	0.366948	4.185082e-01
+C(loan_purpose)[T.32]	0.348670	3.871549e-01
+C(loan_purpose)[T.4]	0.349081	3.617361e-01
+C(loan_purpose)[T.5]	-4.874698	-4.831505e+00
+C(loan_type)[T.2]	-0.745284	-7.643433e-01
+C(loan_type)[T.3]	-0.464881	-4.580584e-01
+C(loan_type)[T.4]	NaN	-4.399052e-01
+Intercept	-208.534808	-1.949197e+02
+acs_median_income	NaN	1.478916e-10
+acs_poverty_rate	NaN	2.459651e+00
+acs_share_black	NaN	-2.295779e-01
+acs_share_hispanic	NaN	-2.547970e-01
+acs_unemployment_rate	NaN	-4.964534e-01
+year	0.103982	9.805716e-02
+[OK] Table 5 CSV   : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_5_hmda_vs_hmda_acs.csv
+[OK] Table 5 TeX   : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_5_hmda_vs_hmda_acs.tex
+
+=== Table 6.1 – Performance des modèles IA (Logit / RF / XGBoost) ===
+Model	AUC	F1	Accuracy
+0	Logit	0.566396	0.674147	0.557878
+1	RandomForest	0.592607	0.610788	0.570406
+[OK] Table 6.1 CSV : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_6_1_model_performance.csv
+[OK] Table 6.1 TeX : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_6_1_model_performance.tex
+
+=== Table 6.2 – Fairness RF par race (TPR/FPR) ===
+Race	TPR_RF	FPR_RF
+0	Race Not Available	0.626703	0.477427
+1	White	0.629820	0.511367
+2	Asian	0.652478	0.524571
+3	Black or African American	0.517882	0.384511
+4	Native Hawaiian or Other Pacific Islander	0.521008	0.453333
+5	Free Form Text Only	0.200000	0.250000
+6	Joint	0.633059	0.542857
+7	American Indian or Alaska Native	0.636364	0.403670
+8	2 or more minority races	0.604938	0.370968
+[OK] Table 6.2 CSV : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_6_2_fairness_rf_by_race.csv
+[OK] Table 6.2 TeX : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables\table_6_2_fairness_rf_by_race.tex
+
+
+[OK] Figure 2.1 enregistrée : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures\figure_2_1_approval_rate_2007_2023.png
+
+[OK] Figure 2.2 enregistrée : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures\figure_2_2_loan_amount_pre_vs_ia.png
+
+[OK] Figure 5.1 enregistrée : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures\figure_5_1_acs_median_income_linear.png
+
+[OK] Figure 5.2 enregistrée : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures\figure_5_2_acs_median_income_log.png
+
+[OK] Figure 6.1 enregistrée : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures\figure_6_1_roc_logit_vs_rf.png
+
+[OK] Figure 6.2 enregistrée : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures\figure_6_2_fairness_rf_by_race.png
+
+
+=== RÉCAPITULATIF ===
+Tables générées dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\tables
+Figures générées dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\data_work\figures
+→ Tous les contenus sont visibles dans le notebook ET prêts à être glissés dans Overleaf.
+
+
+'''
+    # Interprétation de la Figure 6.1 – Courbes ROC des modèles de classification
+
+    La Figure 6.1 compare la performance discriminante de deux algorithmes de classification – une régression 
+logistique (Logit) et un modèle Random Forest – appliqués aux données de la période algorithmique (2018–2023). 
+La diagonale en pointillés représente un classifieur aléatoire (performance équivalente au hasard, AUC = 0,5).
+    Les deux courbes se situent au-dessus de la ligne de hasard, ce qui indique que les modèles parviennent à extraire
+un signal informatif à partir des variables disponibles. Toutefois, leurs performances restent modérées, avec une 
+AUC de 0,566 pour le modèle Logit et 0,593 pour le Random Forest, soit un avantage marginal mais systématique en 
+faveur du modèle non linéaire.
+    La proximité des courbes avec la diagonale suggère que le pouvoir prédictif global demeure limité : les variables 
+HMDA et ACS utilisées capturent une partie de l’information, mais ne permettent pas une séparation nette entre les 
+demandes approuvées et refusées. Cette performance modérée est cohérente avec la nature hautement réglementée et 
+standardisée des décisions de crédit, dans lesquelles une grande part de la variance est déterminée par des règles 
+internes non observées.
+    En comparaison, le Random Forest présente une meilleure capacité à capter des non-linéarités et interactions implicites, 
+ce qui explique sa légère supériorité par rapport à la régression logistique. Néanmoins, l’écart restreint entre les deux 
+modèles indique que les gains de complexité algorithmique sont limités dans ce contexte empirique.
+    Ces résultats soulignent un point méthodologique central : l’augmentation de la sophistication des modèles ne se traduit
+pas nécessairement par une amélioration substantielle de la performance prédictive, ce qui renforce l’intérêt d’une 
+évaluation conjointe entre performance et équité algorithmique dans les systèmes de scoring de crédit.
+
+
+    # Interprétation de la Figure 6.2 – TPR/FPR par groupe racial (modèle Random Forest)
+
+    La Figure 6.2 met en évidence des différences marquées dans les performances du modèle de Random Forest 
+selon les groupes raciaux, révélant des asymétries substantielles en matière d’équité algorithmique.
+Le TPR (True Positive Rate), qui mesure la capacité du modèle à approuver correctement les dossiers réellement éligibles, 
+est relativement élevé pour les groupes White, Asian et Joint (≈ 0,63 – 0,65), ce qui signifie que ces groupes bénéficient 
+d’une meilleure détection des dossiers légitimes. À l’inverse, les groupes Black or African American et Native Hawaiian or 
+Other Pacific Islander présentent des TPR plus faibles (≈ 0,52), indiquant une probabilité plus élevée de faux rejets pour ces populations.
+    Parallèlement, le FPR (False Positive Rate), qui mesure la probabilité d’approuver à tort des dossiers non éligibles, est 
+plus élevé pour les groupes Asian, Joint et White (≈ 0,50 – 0,55), traduisant une plus grande tolérance du modèle à l’erreur 
+positive pour ces groupes. À l’inverse, les groupes Black et 2 or more minority races présentent des FPR plus faibles, ce qui 
+suggère un seuil décisionnel plus restrictif appliqué implicitement à ces profils.
+    Le groupe Free Form Text Only se distingue par des valeurs atypiques (TPR très faible ≈ 0,20), reflétant probablement une 
+instabilité statistique liée à un faible effectif, plutôt qu’un effet structurel du modèle.
+Dans l’ensemble, ce graphique met en évidence un conflit structurel entre performance prédictive et équité : certains groupes bénéficient 
+simultanément de taux d’approbation et de tolérance à l’erreur plus élevés, tandis que d’autres subissent une double pénalité (TPR faible 
+et FPR faible), ce qui correspond à une forme de biais conditionnel post-apprentissage. Ces résultats soulignent les limites des modèles 
+non linéaires comme Random Forest dans des contextes de décision à fort enjeu social, et justifient la nécessité d’intégrer des contraintes 
+explicites de fairness dans les systèmes de scoring automatisés.
+"

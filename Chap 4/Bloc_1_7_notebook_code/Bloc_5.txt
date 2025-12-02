@@ -1,0 +1,1016 @@
+on continue. Voici le bloc 5 : "# %% [markdown]
+# # 9. Cross-era ML – performance croisée pré-IA ↔ IA
+#
+# 🔗 Référence thèse :
+# - Section 6.X : "Robustesse intertemporelle des modèles de scoring"
+# - Tableau 7.1 : performance croisée train pré-IA / test IA et inversement
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
+
+# 9.1. Construction du DataFrame combiné pré-IA / IA sur features communes
+
+common_ml_cols = ["loan_purpose", "loan_type", "hoepa_status", "state_code", "year", "approved"]
+common_ml_cols = [c for c in common_ml_cols if c in pre_ai.columns and c in ai_hmda.columns]
+
+print("Colonnes ML communes pré-IA / IA :", common_ml_cols)
+
+pre_ml = pre_ai[common_ml_cols].copy()
+ia_ml  = ai_hmda[common_ml_cols].copy()
+
+pre_ml["era"] = "pre_IA"
+ia_ml["era"]  = "IA"
+
+ml_df = pd.concat([pre_ml, ia_ml], axis=0)
+ml_df["approved"] = ml_df["approved"].astype(int)
+
+# 9.2. Encodage commun (one-hot) et séparation des cohortes
+
+X_all_ml = pd.get_dummies(
+    ml_df.drop(columns=["approved", "era"]),
+    drop_first=True
+)
+y_all_ml = ml_df["approved"]
+era_all  = ml_df["era"]
+
+X_pre = X_all_ml[era_all == "pre_IA"]
+y_pre = y_all_ml[era_all == "pre_IA"]
+
+X_ia  = X_all_ml[era_all == "IA"]
+y_ia  = y_all_ml[era_all == "IA"]
+
+print("X_pre shape :", X_pre.shape, "X_ia shape :", X_ia.shape)
+
+# 9.3. Modèle RF – train sur pré-IA, test sur pré-IA ET IA
+
+rf_pre = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=None,
+    random_state=42,
+    n_jobs=-1
+)
+rf_pre.fit(X_pre, y_pre)
+
+y_pre_pred_proba_pre = rf_pre.predict_proba(X_pre)[:, 1]
+y_pre_pred_pre       = (y_pre_pred_proba_pre >= 0.5).astype(int)
+
+y_ia_pred_proba_pre = rf_pre.predict_proba(X_ia)[:, 1]
+y_ia_pred_pre       = (y_ia_pred_proba_pre >= 0.5).astype(int)
+
+def perf_block(y_true, y_pred_proba, y_pred_label):
+    return (
+        roc_auc_score(y_true, y_pred_proba),
+        f1_score(y_true, y_pred_label),
+        accuracy_score(y_true, y_pred_label)
+    )
+
+auc_pre_pre, f1_pre_pre, acc_pre_pre = perf_block(y_pre, y_pre_pred_proba_pre, y_pre_pred_pre)
+auc_pre_ia,  f1_pre_ia,  acc_pre_ia  = perf_block(y_ia,  y_ia_pred_proba_pre,  y_ia_pred_pre)
+
+# 9.4. Modèle RF – train sur IA, test sur IA ET pré-IA
+
+rf_ia = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=None,
+    random_state=42,
+    n_jobs=-1
+)
+rf_ia.fit(X_ia, y_ia)
+
+y_ia_pred_proba_ia = rf_ia.predict_proba(X_ia)[:, 1]
+y_ia_pred_ia       = (y_ia_pred_proba_ia >= 0.5).astype(int)
+
+y_pre_pred_proba_ia = rf_ia.predict_proba(X_pre)[:, 1]
+y_pre_pred_ia       = (y_pre_pred_proba_ia >= 0.5).astype(int)
+
+auc_ia_ia,  f1_ia_ia,  acc_ia_ia  = perf_block(y_ia,  y_ia_pred_proba_ia,  y_ia_pred_ia)
+auc_ia_pre, f1_ia_pre, acc_ia_pre = perf_block(y_pre, y_pre_pred_proba_ia, y_pre_pred_ia)
+
+# 9.5. Tableau récapitulatif cross-era
+
+cross_rows = [
+    ("Train pré-IA", "Test pré-IA", auc_pre_pre, f1_pre_pre, acc_pre_pre),
+    ("Train pré-IA", "Test IA",    auc_pre_ia,  f1_pre_ia,  acc_pre_ia),
+    ("Train IA",     "Test IA",    auc_ia_ia,   f1_ia_ia,   acc_ia_ia),
+    ("Train IA",     "Test pré-IA",auc_ia_pre,  f1_ia_pre,  acc_ia_pre),
+]
+
+cross_df = pd.DataFrame(
+    cross_rows,
+    columns=["Train_era", "Test_era", "AUC", "F1", "Accuracy"]
+)
+
+print("\n=== Tableau 7.1 – Performance cross-era (RandomForest) ===")
+display(cross_df)
+
+cross_path = os.path.join(out_dir, "table_7_1_cross_era_performance_rf.csv")
+cross_df.to_csv(cross_path, index=False)
+print("Tableau 7.1 sauvegardé dans :", cross_path)
+
+Colonnes ML communes pré-IA / IA : ['loan_purpose', 'loan_type', 'hoepa_status', 'state_code', 'year', 'approved']
+X_pre shape : (13511720, 9) X_ia shape : (569500, 9)
+
+=== Tableau 7.1 – Performance cross-era (RandomForest) ===
+Train_era	Test_era	AUC	F1	Accuracy
+0	Train pré-IA	Test pré-IA	0.615385	0.827640	0.707265
+1	Train pré-IA	Test IA	0.537439	0.703264	0.542334
+2	Train IA	Test IA	0.910744	0.865198	0.849940
+3	Train IA	Test pré-IA	0.575681	0.649265	0.562378
+Tableau 7.1 sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_7_1_cross_era_performance_rf.csv
+9. Cross-era ML – Lecture détaillée du Tableau 7.1 (RandomForest)
+9.1. Objectif de l’exercice cross-era
+Cette section teste la robustesse intertemporelle des modèles de scoring, conformément à la Section 6.X de la thèse (« Robustesse intertemporelle des modèles de scoring ») et au Tableau 7.1 :
+
+Un RandomForest est entraîné séparément sur :
+la cohorte pré-IA,
+la cohorte IA.
+Chaque modèle est ensuite évalué :
+dans son ère d’entraînement (intra-cohorte),
+sur l’autre ère (cross-era).
+Les features utilisées sont les covariables communes :
+loan_purpose, loan_type, hoepa_status, state_code, year, ainsi que la cible approved.
+
+9.2. Rappel des résultats – Tableau 7.1
+Tableau 7.1 – Performance cross-era du RandomForest
+Train_era	Test_era	AUC	F1	Accuracy
+Train pré-IA	Test pré-IA	0.6154	0.8276	0.7073
+Train pré-IA	Test IA	0.5374	0.7033	0.5423
+Train IA	Test IA	0.9107	0.8652	0.8499
+Train IA	Test pré-IA	0.5757	0.6493	0.5624
+On peut lire ce tableau comme une matrice 2×2 :
+
+Ligne 1–2 : modèle entraîné en pré-IA, testé sur pré-IA puis IA.
+Ligne 3–4 : modèle entraîné en IA, testé sur IA puis pré-IA.
+9.3. Performance intra-era vs cross-era
+9.3.1. Modèle entraîné en pré-IA
+Évaluation	AUC	F1	Accuracy	Lecture
+Train pré-IA → Test pré-IA	0.6154	0.8276	0.7073	Performance correcte dans son régime d’origine
+Train pré-IA → Test IA	0.5374	0.7033	0.5423	Dégradation nette sur les données IA
+Lecture :
+
+Sur les données pré-IA, le modèle atteint :
+un AUC ≈ 0,62, ce qui indique une capacité de discrimination modérée,
+un F1 ≈ 0,83 et une accuracy ≈ 0,71, cohérents avec un modèle globalement acceptable dans son contexte d’origine.
+Lorsqu’il est appliqué aux données IA, la performance chute :
+l’AUC tombe à ≈ 0,54, à peine au-dessus d’un modèle aléatoire (AUC = 0,5),
+l’accuracy se rapproche de 0,54, et le F1 de 0,70.
+Autrement dit, un modèle calibré sur l’ère pré-IA est quasi incapable de généraliser correctement aux décisions prises en période IA.
+Il semble apprendre un régime décisionnel « ancien » qui ne reflète plus les logiques d’approbation postérieures à l’introduction des systèmes IA.
+
+9.3.2. Modèle entraîné en IA
+Évaluation	AUC	F1	Accuracy	Lecture
+Train IA → Test IA	0.9107	0.8652	0.8499	Excellente performance dans l’ère IA
+Train IA → Test pré-IA	0.5757	0.6493	0.5624	Performance modérée sur l’ère pré-IA
+Lecture :
+
+Sur les données IA, le modèle IA est très performant :
+AUC ≈ 0,91 → forte capacité de discrimination entre dossiers approuvés/refusés,
+F1 ≈ 0,87, accuracy ≈ 0,85 → le modèle est calibré sur un régime décisionnel très structuré et prévisible.
+Lorsqu’on le projette sur l’ère pré-IA, les performances se dégradent :
+AUC ≈ 0,58 → meilleure que le hasard, mais clairement en dessous du niveau observé dans l’ère IA,
+F1 ≈ 0,65, accuracy ≈ 0,56.
+Un modèle calibré sur l’ère IA reste légèrement meilleur que le hasard lorsqu’on le projette en arrière sur la période pré-IA, mais il ne retrouve pas le niveau de performance atteint dans son régime d’origine.
+Cela suggère que les règles implicites de décision en IA incorporent des signaux ou des patterns qui n’existaient pas (ou étaient moins structurés) en pré-IA.
+
+9.4. Asymétrie des performances cross-era
+On observe une asymétrie marquée :
+
+Pré-IA → IA : AUC ≈ 0,54 (quasi aléatoire).
+IA → Pré-IA : AUC ≈ 0,58 (un peu meilleur, mais toujours faible).
+Direction	AUC cross-era	Interprétation
+pré-IA → IA	0.5374	Le modèle « ancien » ne comprend plus la logique IA
+IA → pré-IA	0.5757	Le modèle IA capte certains patterns structurels valables en pré-IA, mais perd en précision
+Cette asymétrie est cohérente avec l’idée que :
+
+L’ère IA a introduit un régime décisionnel plus sophistiqué, avec :
+des interactions plus complexes entre covariables,
+une exploitation plus fine des signaux,
+possiblement de nouveaux standards de risque/approbation.
+Les modèles pré-IA sont trop simples ou trop rigides par rapport à ce nouveau régime, et généraliser de l’« ancien monde » vers le « nouveau monde » est beaucoup plus difficile que l’inverse.
+9.5. Implications pour la thèse : robustesse intertemporelle et changement de régime
+9.5.1. Non-stationnarité et changement de régime
+Les résultats de Tableau 7.1 fournissent une évidence empirique forte de non-stationnarité :
+
+Le modèle pré-IA ne « fonctionne » pas sur les données IA.
+Le modèle IA se dégrade dès qu’on le projette en pré-IA.
+Les distributions jointes ( (X, y) ) avant et après 2018–2020 ne semblent pas suivre le même processus générateur.
+En termes de scoring, cela signifie que le passage à des systèmes IA ne correspond pas à une simple amélioration « continue » d’un modèle de scoring existant, mais à un changement de régime dans la façon dont le risque est évalué et les décisions sont prises.
+
+9.5.2. Lien avec la robustesse intertemporelle
+Pour la Section 6.X (« Robustesse intertemporelle des modèles de scoring »), tu peux formuler :
+
+L’exercice cross-era met en évidence une robustesse intertemporelle limitée des modèles de scoring.
+Les RandomForest estimés sur la période pré-IA perdent presque toute leur capacité de discrimination lorsqu’ils sont projetés sur des décisions prises en période IA (AUC ≈ 0,54).
+Inversement, les modèles calibrés en période IA présentent une excellente performance dans leur ère d’origine (AUC ≈ 0,91), mais ne généralisent qu’imparfaitement à la période pré-IA (AUC ≈ 0,58).
+Ces résultats suggèrent que la transition vers des systèmes de scoring IA s’accompagne d’un changement profond des critères de décision plutôt que d’un simple raffinement marginal des modèles historiques.
+
+9.6. Conclusion synthétique pour le chapitre
+En résumé :
+
+Intra-era, les modèles sont performants (surtout en IA).
+Cross-era, la performance chute, en particulier dans le sens pré-IA → IA.
+Cette instabilité temporelle plaide pour :
+une mise à jour régulière des modèles de scoring,
+une vigilance accrue sur la non-stationnarité des données,
+et une interprétation prudente des comparaisons intertemporelles de performance.
+Tu peux donc conclure ta Section 9 en soulignant que la robustesse intertemporelle est limitée, ce qui renforce l’idée d’un basculement de paradigme entre l’ère des modèles traditionnels et l’ère IA en matière de décision de crédit.d
+
+# %% [markdown]
+# # 10. Fairness metrics avancées – Disparate Impact, Equal Opportunity, Predictive Parity
+#
+# 🔗 Référence thèse :
+# - Section 6.X : "Fairness métrique et dilemmes régulatoires"
+# - Tableaux 6.3–6.4 : indicateurs de fairness normalisés par groupe
+
+# On suppose que :
+# - y_test, y_pred_rf, y_pred_proba_rf existent (section 7)
+# - race_test = ai_acs.loc[y_test.index, "derived_race"] a déjà été calculé
+
+if "race_test" not in globals():
+    if "derived_race" in ai_acs.columns:
+        race_test = ai_acs.loc[y_test.index, "derived_race"]
+    else:
+        raise ValueError("Impossible de retrouver 'derived_race' pour les métriques de fairness avancées.")
+
+def group_confusion_stats(y_true, y_pred, mask):
+    """Retourne TP, FP, TN, FN pour un groupe, ou None si trop peu de données."""
+    n = mask.sum()
+    if n < 50:
+        return None
+    cm = confusion_matrix(y_true[mask], y_pred[mask])
+    if cm.shape != (2, 2):
+        return None
+    tn, fp, fn, tp = cm.ravel()
+    return tn, fp, fn, tp
+
+# 10.1. Calcul des métriques par groupe racial
+
+group_metrics = []
+
+for grp in race_test.dropna().unique():
+    mask = (race_test == grp)
+    stats = group_confusion_stats(y_test, y_pred_rf, mask)
+    if stats is None:
+        group_metrics.append((grp, np.nan, np.nan, np.nan, np.nan, np.nan))
+        continue
+
+    tn, fp, fn, tp = stats
+
+    # Taux de prédiction positive (PP) pour disparate impact
+    pp_rate = (tp + fp) / (tn + fp + fn + tp)
+
+    # TPR (sensibilité)
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else np.nan
+
+    # PPV (precision)
+    ppv = tp / (tp + fp) if (tp + fp) > 0 else np.nan
+
+    group_metrics.append((grp, pp_rate, tpr, ppv, tn, fp + fn))
+
+fair_adv_df = pd.DataFrame(
+    group_metrics,
+    columns=["Race", "PP_rate", "TPR", "PPV", "TN", "Errors"]
+)
+
+# 10.2. Normalisation par rapport au groupe de référence (White)
+
+ref_grp = "White"
+if ref_grp not in list(fair_adv_df["Race"]):
+    print("⚠️ Groupe de référence 'White' absent – impossible de construire les ratios DI/EO/PPV.")
+else:
+    ref_row = fair_adv_df[fair_adv_df["Race"] == ref_grp].iloc[0]
+
+    di_list = []
+    for _, row in fair_adv_df.iterrows():
+        di = row["PP_rate"] / ref_row["PP_rate"] if ref_row["PP_rate"] > 0 else np.nan
+        eo_diff = row["TPR"] - ref_row["TPR"] if pd.notna(row["TPR"]) else np.nan
+        ppv_diff = row["PPV"] - ref_row["PPV"] if pd.notna(row["PPV"]) else np.nan
+
+        di_list.append((row["Race"], row["PP_rate"], di, row["TPR"], eo_diff, row["PPV"], ppv_diff))
+
+    fairness_advanced = pd.DataFrame(
+        di_list,
+        columns=[
+            "Race",
+            "PP_rate",
+            "DisparateImpact_vs_White",
+            "TPR",
+            "EqualOpportunityDiff_vs_White",
+            "PPV",
+            "PredictiveParityDiff_vs_White"
+        ]
+    )
+
+    print("\n=== Tableau 6.3 – Fairness avancée RF par race (réf = White) ===")
+    display(fairness_advanced)
+
+    fair_adv_path = os.path.join(out_dir, "table_6_3_fairness_advanced_rf_by_race.csv")
+    fairness_advanced.to_csv(fair_adv_path, index=False)
+    print("Tableau 6.3 sauvegardé dans :", fair_adv_path)
+=== Tableau 6.3 – Fairness avancée RF par race (réf = White) ===
+Race	PP_rate	DisparateImpact_vs_White	TPR	EqualOpportunityDiff_vs_White	PPV	PredictiveParityDiff_vs_White
+0	Race Not Available	0.537880	0.925550	0.626703	-0.003118	0.471851	-0.166579
+1	White	0.581147	1.000000	0.629820	0.000000	0.638430	0.000000
+2	Asian	0.598139	1.029239	0.652478	0.022658	0.627418	-0.011012
+3	Black or African American	0.449773	0.773940	0.517882	-0.111938	0.563421	-0.075009
+4	Native Hawaiian or Other Pacific Islander	0.483271	0.831583	0.521008	-0.108812	0.476923	-0.161507
+5	Free Form Text Only	0.238806	0.410922	0.200000	-0.429820	0.187500	-0.450930
+6	Joint	0.597586	1.028288	0.633059	0.003239	0.642758	0.004328
+7	American Indian or Alaska Native	0.517564	0.890592	0.636364	0.006543	0.601810	-0.036620
+8	2 or more minority races	0.463415	0.797414	0.604938	-0.024882	0.515789	-0.122640
+Tableau 6.3 sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_6_3_fairness_advanced_rf_by_race.csv
+10. Fairness métrique avancée – Disparate Impact, Equal Opportunity, Predictive Parity
+10.1. Rappel du cadre et des métriques
+Dans cette section, on évalue la fairness du RandomForest IA par groupe racial, en suivant trois grandes familles d’indicateurs :
+
+Disparate Impact (DI) : ratio des taux de prédiction positive (PP_rate) d’un groupe minoritaire par rapport au groupe de référence (ici White).
+[ DI(g) = \frac{\Pr(\hat{Y} = 1 \mid G = g)}{\Pr(\hat{Y} = 1 \mid G = \text{White})} ]
+En pratique, on regarde si le DI est proche de 1 (parité) ou au contraire < 0,8 (zone classiquement considérée comme problématique dans la littérature).
+
+Equal Opportunity (EO) : différence de taux de vrais positifs (TPR) par rapport aux Whites.
+[ EO_diff(g) = TPR(g) - TPR(\text{White}) ]
+Un EO_diff négatif indique que, à risque réel d’approbation équivalent (Y=1), le modèle approuve moins souvent le groupe ( g ) que les Whites.
+
+Predictive Parity (PP) : différence de précision conditionnelle (PPV) par rapport aux Whites.
+[ PPV_diff(g) = PPV(g) - PPV(\text{White}) ]
+Un PPV plus faible signifie que, parmi les dossiers prédits comme approuvés ((\hat{Y} = 1)), la proportion de vrais positifs est plus basse dans le groupe ( g ), ce qui peut refléter une calibration différente.
+
+Les métriques sont calculées à partir de la matrice de confusion du modèle pour chaque groupe racial, à condition de disposer d’au moins 50 observations par groupe.
+
+10.2. Résultats – Tableau 6.3 (RandomForest IA, réf. = White)
+Tableau 6.3 – Fairness avancée RF par race (référence = White)
+Race	PP_rate	DI vs White	TPR	EO diff vs White	PPV	PPV diff vs White
+Race Not Available	0.5379	0.9256	0.6267	-0.0031	0.4719	-0.1666
+White	0.5811	1.0000	0.6298	0.0000	0.6384	0.0000
+Asian	0.5981	1.0292	0.6525	+0.0227	0.6274	-0.0110
+Black or African American	0.4498	0.7739	0.5179	-0.1119	0.5634	-0.0750
+Native Hawaiian or Other Pacific Islander	0.4833	0.8316	0.5210	-0.1088	0.4769	-0.1615
+Free Form Text Only	0.2388	0.4109	0.2000	-0.4298	0.1875	-0.4509
+Joint	0.5976	1.0283	0.6331	+0.0032	0.6428	+0.0043
+American Indian or Alaska Native	0.5176	0.8906	0.6364	+0.0065	0.6018	-0.0366
+2 or more minority races	0.4634	0.7974	0.6049	-0.0249	0.5158	-0.1226
+Note méthodologique : certains groupes (par ex. Free Form Text Only, 2 or more minority races) peuvent avoir des effectifs faibles, ce qui rend leurs métriques plus instables. Les conclusions doivent donc être nuancées pour ces catégories.
+
+10.3. Disparate Impact – Taux de prédiction positive par race
+Le Disparate Impact compare, pour chaque race, la fréquence des décisions positives ((\hat{Y} = 1)) à celle du groupe de référence (White).
+
+10.3.1. Lecture du DI
+Race	PP_rate	DI vs White	Interprétation synthétique
+White	0.5811	1.0000	Référence (100 %)
+Asian	0.5981	1.0292	Légèrement plus de prédictions positives que les Whites
+Joint	0.5976	1.0283	Niveau proche ou légèrement supérieur aux Whites
+American Indian or Alaska Native	0.5176	0.8906	Léger déficit de PP vs Whites
+Race Not Available	0.5379	0.9256	Proche, mais un peu en-dessous des Whites
+Native Hawaiian or Other Pacific Islander	0.4833	0.8316	DI réduit, mais encore juste au-dessus du seuil 0,8
+2 or more minority races	0.4634	0.7974	DI < 0,8
+Black or African American	0.4498	0.7739	DI < 0,8
+Free Form Text Only	0.2388	0.4109	DI très faible, interprétation délicate (eff. faible)
+10.3.2. Interprétation pour la thèse
+Le Disparate Impact est globalement proche de 1 pour :
+les Asians, les profils Joint et dans une moindre mesure American Indian or Alaska Native, ce qui indique des taux de prédiction positive comparables ou légèrement supérieurs aux Whites.
+Pour les groupes noirs et certains groupes combinés :
+Black or African American : DI ≈ 0,77
+2 or more minority races : DI ≈ 0,80 (juste en-dessous du seuil 0,8)
+Native Hawaiian or Other Pacific Islander : DI ≈ 0,83 (limite basse mais > 0,8)
+Les Black borrowers présentent un taux de prédiction positive nettement inférieur à celui des Whites (DI ≈ 0,77), ce qui, dans la littérature sur la discrimination indirecte, est souvent considéré comme un signal potentiellement problématique (règle des 80 %, ou four-fifths rule).
+Pour les groupes à effectifs réduits (par ex. Free Form Text Only), le DI très faible doit être interprété avec prudence : il s’agit davantage d’un signal exploratoire que d’une preuve statistique robuste.
+
+10.4. Equal Opportunity – Taux de vrais positifs (TPR)
+L’Equal Opportunity se concentre sur la probabilité d’approuver un dossier réellement approuvable (Y=1). On compare ici le TPR des groupes minoritaires à celui des Whites.
+
+10.4.1. Comparaison des TPR
+Race	TPR	EO diff vs White	Lecture
+White	0.6298	0.0000	Référence
+Asian	0.6525	+0.0227	Légère sur-approbation par rapport aux Whites, à risque réel comparable
+Joint	0.6331	+0.0032	Très proche des Whites
+American Indian or Alaska Native	0.6364	+0.0065	Légère meilleure EO que les Whites
+2 or more minority races	0.6049	-0.0249	Légère sous-approbation
+Race Not Available	0.6267	-0.0031	Pratiquement identique aux Whites
+Native Hawaiian or Other Pacific Islander	0.5210	-0.1088	TPR nettement plus faible
+Black or African American	0.5179	-0.1119	TPR significativement plus faible
+Free Form Text Only	0.2000	-0.4298	TPR très faible (mais effectif très limité)
+10.4.2. Interprétation pour la thèse
+Les groupes Asian, Joint et American Indian or Alaska Native ont des TPR légèrement supérieurs à ceux des Whites, ce qui suggère qu’à risque réel d’approbation équivalent, ils ne sont pas pénalisés par le modèle IA.
+Les groupes Black or African American et Native Hawaiian or Other Pacific Islander présentent un déficit de TPR d’environ 11 points de pourcentage (EO_diff ≈ -0,11) :
+Cela signifie que, parmi les dossiers qui auraient dû être approuvés (Y=1) selon le label, le modèle IA échoue plus souvent à les approuver dans les groupes Black et NHOPI que dans le groupe White.
+D’un point de vue Equal Opportunity, le modèle ne garantit donc pas un accès équitable à l’approbation conditionnellement au mérite (Y=1).
+
+10.5. Predictive Parity – Précision conditionnelle (PPV)
+La Predictive Parity se penche sur la fiabilité des prédictions positives du modèle ((\hat{Y}=1)) dans chaque groupe racial : parmi ceux que le modèle prédit comme approuvés, quelle proportion est effectivement approuvée en vérité ?
+
+10.5.1. Comparaison des PPV
+Race	PPV	PPV diff vs White	Lecture
+White	0.6384	0.0000	Référence
+Joint	0.6428	+0.0043	Légèrement mieux calibré que les Whites
+Asian	0.6274	-0.0110	Très proche des Whites
+American Indian or Alaska Native	0.6018	-0.0366	PPV modérément plus faible
+Black or African American	0.5634	-0.0750	PPV nettement plus faible
+2 or more minority races	0.5158	-0.1226	PPV sensiblement plus faible
+Native Hawaiian or Other Pacific Islander	0.4769	-0.1615	PPV très inférieur aux Whites
+Race Not Available	0.4719	-0.1666	Qualité prédictive faible dans ce groupe
+Free Form Text Only	0.1875	-0.4509	PPV extrêmement faible (mais effectif limité)
+10.5.2. Interprétation pour la thèse
+Pour les Asians et les profils Joint, le PPV est très proche (voire légèrement supérieur) à celui des Whites, ce qui suggère une calibration comparable.
+En revanche, pour les groupes Black, NHOPI et 2 or more minority races, le PPV est nettement inférieur, avec des écarts allant de -7,5 points (Black) à -16 points (NHOPI).
+Concrètement, cela signifie que quand le modèle IA prédit « approbation » pour un dossier Black ou NHOPI, cette prédiction est moins souvent correcte que pour un dossier White.
+Le modèle semble donc moins bien calibré pour certains groupes minoritaires, ce qui peut renforcer un sentiment d’injustice perçue : à prédiction positive égale, les groupes minoritaires supportent une plus grande part d’erreurs.
+
+10.6. Synthèse pour les Tableaux 6.3–6.4 et la discussion de fairness
+On peut résumer les principaux enseignements ainsi :
+
+Disparate Impact :
+
+Les groupes Black et 2 or more minority races sont en zone de vigilance (DI < 0,8) par rapport aux Whites.
+Les groupes Asian et Joint bénéficient de niveaux de PP_rate proches ou supérieurs à ceux des Whites.
+Equal Opportunity :
+
+Les TPR sont sensiblement plus faibles pour les groupes Black et NHOPI (≈ -11 points de pourcentage), ce qui suggère un déficit d’accès équitable à l’approbation pour des dossiers pourtant « méritants ».
+Predictive Parity :
+
+Le modèle est moins fiable dans ses prédictions positives pour plusieurs groupes minoritaires (PPV plus faible), notamment Black, NHOPI et 2 or more minority races.
+Au total, ces métriques illustrent bien les dilemmes régulatoires évoqués en Section 6.X :
+un même modèle IA peut sembler performant globalement, tout en produisant des profils de fairness hétérogènes selon les groupes raciaux.
+Les résultats suggèrent notamment que les emprunteurs Black et certains groupes minoritaires combinés subissent à la fois un Disparate Impact (moins de prédictions positives) et une Equal Opportunity réduite (TPR plus faible), dans un contexte où leur Predictive Parity est également inférieure à celle des Whites.
+
+Ces constats nourrissent la discussion sur :
+
+la nécessité de contraintes explicites de fairness (par ex. plafonner les écarts de TPR ou de DI),
+et les tensions possibles entre performance globale et équité intergroupe dans les systèmes de scoring IA.
+
+
+# %% [markdown]
+# # 11. Sous-groupes – revenu, genre, type d’institution
+#
+# 🔗 Référence thèse :
+# - Section 4.X : "Hétérogénéité des effets selon revenus, genre, type d’institution"
+# - Tableau 4.X : taux d’approbation et métriques par sous-groupes
+
+# 11.1. Stratification par revenu (ACS median income)
+
+acs_income = ai_acs.copy()
+if "acs_median_income" in acs_income.columns:
+    s_inc = pd.to_numeric(acs_income["acs_median_income"], errors="coerce")
+    q1, q2 = s_inc.quantile([0.33, 0.66])
+
+    def income_bucket(v):
+        if pd.isna(v):
+            return np.nan
+        if v <= q1:
+            return "Low"
+        elif v <= q2:
+            return "Middle"
+        else:
+            return "High"
+
+    acs_income["income_group"] = s_inc.apply(income_bucket)
+
+    income_approval = (
+        acs_income
+        .groupby("income_group")["approved"]
+        .mean()
+        .reset_index()
+        .rename(columns={"approved": "approval_rate"})
+    )
+
+    print("\n=== Tableau 4.X – Taux d’approbation par tertile de revenu (ACS) ===")
+    display(income_approval)
+
+    income_path = os.path.join(out_dir, "table_4X_approval_by_income_group.csv")
+    income_approval.to_csv(income_path, index=False)
+    print("Tableau 4.X sauvegardé dans :", income_path)
+else:
+    print("⚠️ 'acs_median_income' absent – impossible de construire les groupes de revenu.")
+
+# 11.2. Stratification par genre (applicant_sex) – cohorte IA
+
+if "applicant_sex" in ai_acs.columns:
+    sex_approval = (
+        ai_acs
+        .groupby("applicant_sex")["approved"]
+        .mean()
+        .reset_index()
+        .rename(columns={"approved": "approval_rate"})
+    )
+
+    print("\n=== Tableau 4.Y – Taux d’approbation par genre (IA, HMDA+ACS) ===")
+    display(sex_approval)
+
+    sex_path = os.path.join(out_dir, "table_4Y_approval_by_sex_ia_acs.csv")
+    sex_approval.to_csv(sex_path, index=False)
+    print("Tableau 4.Y sauvegardé dans :", sex_path)
+else:
+    print("⚠️ 'applicant_sex' absent dans ai_acs.")
+
+# 11.3. Stratification par type d’institution (si colonne disponible)
+
+inst_cols = ["purchaser_type", "lender", "agency_code"]
+inst_col = None
+for c in inst_cols:
+    for df in [core, model, hmda_acs]:
+        if c in df.columns:
+            inst_col = c
+            break
+    if inst_col is not None:
+        break
+
+if inst_col is not None:
+    print("\nColonne de type d’institution détectée :", inst_col)
+
+    inst_pre = pre_ai.copy()
+    inst_ia  = ai_hmda.copy()
+
+    inst_pre["era"] = "pre_IA"
+    inst_ia["era"]  = "IA"
+
+    inst_df = pd.concat([inst_pre, inst_ia], axis=0)
+
+    inst_approval = (
+        inst_df
+        .groupby(["era", inst_col])["approved"]
+        .mean()
+        .reset_index()
+        .rename(columns={"approved": "approval_rate"})
+    )
+
+    print("\n=== Tableau 4.Z – Taux d’approbation par type d’institution et par ère ===")
+    display(inst_approval)
+
+    inst_path = os.path.join(out_dir, "table_4Z_approval_by_institution_and_era.csv")
+    inst_approval.to_csv(inst_path, index=False)
+    print("Tableau 4.Z sauvegardé dans :", inst_path)
+else:
+    print("⚠️ Aucun proxy de type d’institution trouvé ('purchaser_type', 'lender', 'agency_code').")
+
+=== Tableau 4.X – Taux d’approbation par tertile de revenu (ACS) ===
+income_group	approval_rate
+0	High	0.570902
+1	Low	0.507862
+2	Middle	0.539812
+Tableau 4.X sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4X_approval_by_income_group.csv
+
+=== Tableau 4.Y – Taux d’approbation par genre (IA, HMDA+ACS) ===
+applicant_sex	approval_rate
+0	1	0.574521
+1	2	0.578896
+2	3	0.581055
+3	4	0.152527
+4	6	0.543396
+Tableau 4.Y sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4Y_approval_by_sex_ia_acs.csv
+
+Colonne de type d’institution détectée : purchaser_type
+
+=== Tableau 4.Z – Taux d’approbation par type d’institution et par ère ===
+era	purchaser_type	approval_rate
+0	pre_IA	0.0	0.693824
+1	pre_IA	1.0	0.702013
+2	pre_IA	2.0	0.469062
+3	pre_IA	3.0	0.721921
+4	pre_IA	4.0	0.996815
+5	pre_IA	5.0	0.669208
+6	pre_IA	6.0	0.921204
+7	pre_IA	7.0	0.924665
+8	pre_IA	8.0	0.668331
+9	pre_IA	9.0	0.970216
+Tableau 4.Z sauvegardé dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4Z_approval_by_institution_and_era.csv
+11. Sous-groupes – revenu, genre, type d’institution
+11.1. Tertiles de revenu (ACS median income)
+11.1.1. Résultats – Tableau 4.X
+Les demandes IA (HMDA+ACS) ont été découpées en trois tertiles de revenu de zone à partir de acs_median_income :
+
+Low : tiers inférieur de revenu médian ACS,
+Middle : tiers intermédiaire,
+High : tiers supérieur.
+Le taux d’approbation moyen par groupe est :
+
+income_group	approval_rate
+High	0.5709
+Low	0.5079
+Middle	0.5398
+Tableau 4.X – Taux d’approbation par tertile de revenu (ACS)
+
+11.1.2. Lecture
+On observe un gradient monotone :
+
+Les zones Low income affichent un taux d’approbation moyen d’environ 50,8 %.
+Les zones Middle income montent à environ 53,9 %.
+Les zones High income culminent à environ 57,1 %.
+Autrement dit, à structure de données constante, les dossiers issus de zones à revenu médian plus élevé ont plus de chances d’être approuvés que ceux provenant de zones défavorisées.
+
+11.1.3. Interprétation pour la thèse
+Ces résultats suggèrent l’existence d’un gradient socio-économique marqué dans les taux d’approbation IA : les demandeurs issus de zones à revenu médian élevé bénéficient d’un taux d’acceptation supérieur d’environ 6 à 7 points de pourcentage par rapport aux zones les plus pauvres.
+Cette hétérogénéité est cohérente avec une logique de scoring dans laquelle le contexte de revenu de zone (capturé via ACS) est explicitement ou implicitement intégré comme proxy de risque de crédit. Elle pose toutefois la question d’un éventuel renforcement des inégalités territoriales via les modèles IA.
+
+11.2. Genre (applicant_sex) – cohorte IA (HMDA+ACS)
+11.2.1. Résultats – Tableau 4.Y
+Le taux d’approbation est calculé par modalité de applicant_sex dans la cohorte IA :
+
+applicant_sex	approval_rate
+1	0.5745
+2	0.5789
+3	0.5811
+4	0.1525
+6	0.5434
+Tableau 4.Y – Taux d’approbation par genre (IA, HMDA+ACS)
+
+(Les codes 1, 2, 3, 4, 6 suivent la codification HMDA : sexe déclaré, conjoint, non disponible, non fourni, etc. La thèse pourra expliciter ce mapping dans une note ou annexe.)
+
+11.2.2. Lecture
+Pour les catégories majoritaires (1, 2, 3, 6) :
+
+Les taux d’approbation sont relativement proches :
+entre 54 % et 58 %,
+avec de faibles écarts entre les codes 1, 2 et 3 (tous autour de 0,57–0,58).
+La seule exception notable est la catégorie 4 (applicant_sex = 4), avec un taux d’approbation de 15,3 %, très inférieur aux autres.
+
+11.2.3. Interprétation prudente
+Le bloc principal des catégories (1–3, 6) suggère une relative neutralité de genre : il n’y a pas de différence massive d’approbation entre les grandes catégories de sexe déclarées.
+La catégorie 4 est un cas particulier :
+Taux d’approbation extrêmement bas (≈ 15 %),
+Elle correspond généralement à des cas de données manquantes ou non disponibles dans la codification HMDA.
+Il est probable que la catégorie 4 ne reflète pas un « genre » au sens traditionnel, mais plutôt une situation de donnée non renseignée, voire d’enregistrements atypiques.
+Dans la rédaction de la thèse, il sera important de ne pas sur-interpréter ce chiffre comme un biais de genre au sens strict, mais de le traiter comme un indicateur de qualité de donnée ou de stratégie spécifique du modèle sur les dossiers incomplets.
+
+Conclusion pour la section genre :
+
+Hors cas de données manquantes (code 4), les taux d’approbation IA sont très proches entre sexes déclarés, ce qui plaide pour une absence de biais massif directement imputable au genre déclaré dans les données HMDA. La principale source de variation semble davantage liée à la complétude de l’information qu’au sexe en tant que tel.
+
+11.3. Type d’institution (purchaser_type) et ère
+11.3.1. Résultats – Tableau 4.Z
+Une variable proxy de type d’institution a été détectée : purchaser_type.
+Pour l’instant, les taux d’approbation disponibles concernent la cohorte pré-IA :
+
+era	purchaser_type	approval_rate
+pre_IA	0.0	0.6938
+pre_IA	1.0	0.7020
+pre_IA	2.0	0.4691
+pre_IA	3.0	0.7219
+pre_IA	4.0	0.9968
+pre_IA	5.0	0.6692
+pre_IA	6.0	0.9212
+pre_IA	7.0	0.9247
+pre_IA	8.0	0.6683
+pre_IA	9.0	0.9702
+Tableau 4.Z – Taux d’approbation par type d’institution et par ère (pré-IA)
+
+(Les codes purchaser_type correspondent aux catégories HMDA : prêts conservés, vendus à Fannie/Freddie/Ginnie, autres acheteurs, etc.)
+
+11.3.2. Lecture
+Même dans la seule ère pré-IA, la dispersion des taux d’approbation par type d’institution est très marquée :
+
+Certains types d’institution présentent des taux d’approbation exceptionnellement élevés :
+purchaser_type = 4.0 : ≈ 99,7 %,
+purchaser_type = 9.0 : ≈ 97,0 %,
+purchaser_type = 6.0/7.0 : ≈ 92 %.
+D’autres types ont des niveaux intermédiaires autour de 67–72 % (0.0, 1.0, 3.0, 5.0, 8.0).
+Le type 2.0 se distingue par un taux d’approbation nettement plus faible (≈ 46,9 %).
+11.3.3. Interprétation pour la thèse
+Ces résultats indiquent une forte hétérogénéité des taux d’approbation selon le type d’institution ou de canal de portage du prêt.
+Certaines catégories (par ex. purchaser_type = 4, 6, 7, 9) semblent concentrer des portefeuilles quasiment entièrement approuvés, ce qui suggère des stratégies spécifiques (segmentation très forte, pré-filtrage en amont, ou structures de produits quasi systématiquement acceptés).
+À l’inverse, d’autres types, notamment purchaser_type = 2, apparaissent plus sélectifs.
+
+Pour l’instant, le tableau 4.Z ne contient que des observations pré-IA. Dans la suite de l’analyse, il pourra être utile :
+
+soit de compléter ce tableau avec les taux d’approbation IA par type d’institution,
+soit d’insister sur le fait que cette hétérogénéité pré-existe à l’ère IA et constitue un élément de contexte : le système d’octroi était déjà structuré par des différences institutionnelles fortes avant l’introduction des modèles IA.
+11.4. Synthèse – Hétérogénéité socio-économique, de genre, et institutionnelle
+Les trois axes de cette section révèlent une hétérogénéité marquée :
+
+Revenu de zone (ACS) :
+
+Les zones à revenu élevé voient des taux d’approbation supérieurs à ceux des zones pauvres (≈ +6–7 points).
+Cette dimension renforce l’idée d’un risk-based pricing s’appuyant sur des proxies territoriaux de risque.
+Genre (applicant_sex) :
+
+Pour les catégories déclarées principales (codes 1, 2, 3, 6), les écarts de taux d’approbation sont limités, ce qui ne suggère pas de biais massif directement imputable au genre.
+Une catégorie spécifique liée aux données manquantes (code 4) présente un taux anormalement bas (≈ 15 %), illustrant le rôle central de la complétude de l’information.
+Type d’institution (purchaser_type) :
+
+Dès la période pré-IA, certains types d’institutions affichent des taux d’approbation quasi systématiques (> 90 %), d’autres restant autour de 47–70 %.
+Cela montre que l’architecture institutionnelle du marché du crédit est intrinsèquement segmentée, indépendamment de l’introduction des modèles IA.
+Ensemble, ces résultats alimentent la discussion de la Section 4.X sur l’hétérogénéité des effets : ils montrent que la probabilité d’approbation n’est pas seulement une fonction de la solvabilité individuelle, mais dépend fortement du contexte socio-économique, du statut de l’information (genre déclaré / non déclaré) et du type d’institution impliqué dans le prêt.
+
+
+################################################
+
+# %% [markdown]
+# # 4. Descriptive statistics – Applicant, Loan, Approval (pré-IA vs IA)
+#
+# 🔗 Référence thèse :
+# - Section 4.1–4.3 : "Applicant demographics", "Loan characteristics", "Approval outcomes"
+# - Tables descriptives par ère (pré-IA vs IA)
+#
+# Objectif :
+# - Construire des tableaux de stats descriptives par ère pour :
+#   1) la composition raciale (si disponible),
+#   2) les caractéristiques de prêts (montant),
+#   3) les taux d'approbation / refus.
+#
+# Hypothèses :
+# - pre_ai : HMDA pré-IA (2007–2017)
+# - ai_hmda : HMDA IA (2018–2023)
+# - ai_acs : HMDA+ACS IA (pour race/ACS si nécessaire)
+# - BASE_DIR / out_dir existent déjà (ou seront recréés ici).
+
+
+# %%
+from pathlib import Path
+
+# Sécurisation du chemin des tableaux
+try:
+    BASE_DIR
+except NameError:
+    BASE_DIR = os.getcwd()
+
+out_dir = os.path.join(BASE_DIR, "tables")
+os.makedirs(out_dir, exist_ok=True)
+
+# 4.1. Construction d'un DataFrame descriptif combiné pré-IA / IA
+
+pre_desc = pre_ai.copy()
+ai_desc  = ai_hmda.copy()
+
+pre_desc["era"] = "pre_IA"
+ai_desc["era"]  = "IA"
+
+desc_df = pd.concat([pre_desc, ai_desc], axis=0, ignore_index=True)
+
+# On force approved en int si possible
+if "approved" in desc_df.columns:
+    desc_df["approved"] = desc_df["approved"].astype(int)
+
+print("desc_df shape :", desc_df.shape)
+print("Colonnes disponibles dans desc_df :", desc_df.columns.tolist())
+
+# -------------------------------------------------------------------
+# 4.1.1 Applicant demographics – répartition raciale par ère (si possible)
+# -------------------------------------------------------------------
+
+# On essaie de récupérer une colonne de race dans desc_df. Si absente pour pré-IA,
+# on utilisera au moins la cohorte IA (ai_acs).
+
+race_col_candidates = ["derived_race", "race", "applicant_race"]
+race_col = None
+for c in race_col_candidates:
+    if c in desc_df.columns:
+        race_col = c
+        break
+
+if race_col is not None:
+    race_era_tab = (
+        desc_df
+        .dropna(subset=[race_col])
+        .groupby(["era", race_col])\
+        .size()\
+        .reset_index(name="n")
+    )
+    race_era_tab["share"] = (
+        race_era_tab
+        .groupby("era")["n"]
+        .apply(lambda x: x / x.sum())
+        .values
+    )
+
+    print("\n=== Table 4.1 – Répartition raciale par ère (si race disponible dans desc_df) ===")
+    display(race_era_tab)
+
+    race_path = os.path.join(out_dir, "table_4_1_race_share_by_era.csv")
+    race_era_tab.to_csv(race_path, index=False)
+    print("Table 4.1 sauvegardée dans :", race_path)
+
+else:
+    print("⚠️ Aucune colonne de race trouvée dans desc_df – pas de Table 4.1 sur pré-IA.")
+    # On propose, à défaut, une table race uniquement sur IA via ai_acs si possible
+    if "derived_race" in ai_acs.columns:
+        race_ia_only = (
+            ai_acs
+            .dropna(subset=["derived_race"])
+            .groupby("derived_race")\
+            .size()\
+            .reset_index(name="n")
+        )
+        race_ia_only["share"] = race_ia_only["n"] / race_ia_only["n"].sum()
+        print("\n=== Table 4.1 (alternative) – Répartition raciale (IA uniquement, HMDA+ACS) ===")
+        display(race_ia_only)
+
+        race_ia_path = os.path.join(out_dir, "table_4_1_race_share_ia_only.csv")
+        race_ia_only.to_csv(race_ia_path, index=False)
+        print("Table 4.1 (IA only) sauvegardée dans :", race_ia_path)
+
+# -------------------------------------------------------------------
+# 4.1.2 Loan characteristics – montants de prêts par ère
+# -------------------------------------------------------------------
+
+loan_amount_cols = [c for c in ["loan_amount", "loan_amount_000s", "loan_amount_clean"] if c in desc_df.columns]
+if loan_amount_cols:
+    loan_amount_col = loan_amount_cols[0]
+    print(f"\nVariable de montant utilisée : {loan_amount_col}")
+
+    loan_stats = (
+        desc_df
+        .groupby("era")[loan_amount_col]
+        .agg(["count", "mean", "median", "std", "min", "max"])
+        .reset_index()
+    )
+
+    print("\n=== Table 4.2 – Statistiques descriptives des montants de prêts par ère ===")
+    display(loan_stats)
+
+    loan_path = os.path.join(out_dir, "table_4_2_loan_amount_stats_by_era.csv")
+    loan_stats.to_csv(loan_path, index=False)
+    print("Table 4.2 sauvegardée dans :", loan_path)
+else:
+    print("⚠️ Aucune colonne de montant de prêt trouvée dans desc_df – Table 4.2 non générée.")
+
+# -------------------------------------------------------------------
+# 4.1.3 Approval outcomes – taux d’approbation / refus par ère
+# -------------------------------------------------------------------
+
+if "approved" in desc_df.columns:
+    approval_by_era = (
+        desc_df
+        .groupby("era")["approved"]
+        .mean()
+        .reset_index()
+        .rename(columns={"approved": "approval_rate"})
+    )
+
+    print("\n=== Table 4.3 – Taux d’approbation moyen par ère ===")
+    display(approval_by_era)
+
+    appr_path = os.path.join(out_dir, "table_4_3_approval_rate_by_era.csv")
+    approval_by_era.to_csv(appr_path, index=False)
+    print("Table 4.3 sauvegardée dans :", appr_path)
+
+    # Si action_taken disponible, on donne une distribution plus fine
+    action_cols = [c for c in ["action_taken", "action_taken_name"] if c in desc_df.columns]
+    if action_cols:
+        action_col = action_cols[0]
+        action_tab = (
+            desc_df
+            .groupby(["era", action_col])
+            .size()
+            .reset_index(name="n")
+        )
+        action_tab["share"] = (
+            action_tab
+            .groupby("era")["n"]
+            .apply(lambda x: x / x.sum())
+            .values
+        )
+
+        print("\n=== Table 4.4 – Répartition de action_taken par ère ===")
+        display(action_tab)
+
+        action_path = os.path.join(out_dir, "table_4_4_action_taken_by_era.csv")
+        action_tab.to_csv(action_path, index=False)
+        print("Table 4.4 sauvegardée dans :", action_path)
+    else:
+        print("⚠️ Pas de colonne 'action_taken' – Table 4.4 non générée.")
+else:
+    print("⚠️ Colonne 'approved' absente – impossible de construire les taux d’approbation par ère.")
+
+desc_df shape : (14081220, 19)
+Colonnes disponibles dans desc_df : ['action_taken', 'applicant_sex', 'county_code', 'hoepa_status', 'lien_status', 'loan_purpose', 'loan_type', 'preapproval', 'purchaser_type', 'rate_spread', 'state_code', 'year', 'approved', 'era', 'census_tract', 'geoid_tract', 'loan_amount', 'derived_ethnicity', 'derived_race']
+
+=== Table 4.1 – Répartition raciale par ère (si race disponible dans desc_df) ===
+era	derived_race	n	share
+0	IA	2 or more minority races	721	0.001266
+1	IA	American Indian or Alaska Native	1552	0.002725
+2	IA	Asian	42546	0.074708
+3	IA	Black or African American	37418	0.065703
+4	IA	Free Form Text Only	228	0.000400
+5	IA	Joint	8620	0.015136
+6	IA	Native Hawaiian or Other Pacific Islander	974	0.001710
+7	IA	Race Not Available	127945	0.224662
+8	IA	White	349496	0.613689
+Table 4.1 sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4_1_race_share_by_era.csv
+
+Variable de montant utilisée : loan_amount
+
+=== Table 4.2 – Statistiques descriptives des montants de prêts par ère ===
+era	count	mean	median	std	min	max
+0	IA	569500	351651.044776	255000.0	1.393519e+06	5000.0	611455000.0
+1	pre_IA	0	NaN	NaN	NaN	NaN	NaN
+Table 4.2 sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4_2_loan_amount_stats_by_era.csv
+
+=== Table 4.3 – Taux d’approbation moyen par ère ===
+era	approval_rate
+0	IA	0.542334
+1	pre_IA	0.706809
+Table 4.3 sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4_3_approval_rate_by_era.csv
+
+=== Table 4.4 – Répartition de action_taken par ère ===
+era	action_taken	n	share
+0	IA	1.0	308859	0.542334
+1	IA	2.0	11232	0.019723
+2	IA	3.0	70324	0.123484
+3	IA	4.0	68694	0.120622
+4	IA	5.0	25257	0.044349
+5	IA	6.0	84357	0.148125
+6	IA	7.0	290	0.000509
+7	IA	8.0	487	0.000855
+8	pre_IA	1.0	6298523	0.466153
+9	pre_IA	2.0	677153	0.050116
+10	pre_IA	3.0	2574527	0.190540
+11	pre_IA	4.0	1302967	0.096432
+12	pre_IA	5.0	497787	0.036841
+13	pre_IA	6.0	2158740	0.159768
+14	pre_IA	7.0	1132	0.000084
+15	pre_IA	8.0	891	0.000066
+Table 4.4 sauvegardée dans : C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_work\tables\table_4_4_action_taken_by_era.csv
+4.X Commentaires sur les descriptifs – applicant, loans, approval (Tables 4.1–4.4)
+4.X.1 Répartition raciale dans la cohorte IA (Table 4.1)
+La Table 4.1 décrit la composition raciale de la cohorte IA (2018–2023) à partir de derived_race :
+
+Groupe racial	Part dans l’échantillon IA
+White	≈ 61,4 %
+Race Not Available	≈ 22,5 %
+Asian	≈ 7,5 %
+Black or African American	≈ 6,6 %
+Joint	≈ 1,5 %
+Native Hawaiian or Other Pacific Islander (NHOPI)	≈ 0,17 %
+American Indian or Alaska Native	≈ 0,27 %
+2 or more minority races	≈ 0,13 %
+Free Form Text Only	≈ 0,04 %
+Lecture :
+
+La cohorte IA est majoritairement White (un peu plus de 60 %), ce qui reste cohérent avec la structure démographique globale des dossiers HMDA sur la période récente.
+La proportion de dossiers avec race non renseignée (Race Not Available) est très élevée (≈ 22–23 %), ce qui souligne un déficit de complétude et limite la granularité de certaines analyses fines par sous-groupes.
+Les emprunteurs Black et Asian représentent respectivement environ 6,6 % et 7,5 % de l’échantillon IA, ce qui permettra néanmoins des analyses de fairness relativement stables sur ces groupes.
+Les autres catégories (NHOPI, American Indian, 2+ minority races, Free Form Text Only) restent numériquement faibles et devront être interprétées avec prudence dans les sections de fairness (risk of small-sample noise).
+Dans le texte de la thèse, on peut insister sur le fait que la montée en granularité de HMDA post-2018 s’accompagne encore d’un volume substantiel de données manquantes sur la race, ce qui constitue un enjeu méthodologique majeur pour l’évaluation de la fairness.
+
+4.X.2 Caractéristiques des montants de prêts (Table 4.2)
+La Table 4.2 présente les statistiques descriptives des montants de prêts (loan_amount) par ère :
+
+Ère	n (count)	Moyenne (mean)	Médiane	Écart-type (std)	Min	Max
+IA	569 500	≈ 351 651	255 000	≈ 1,39×10⁶	5 000	611 455 000
+pre-IA	0	NaN	NaN	NaN	NaN	NaN
+Lecture :
+
+Pour la cohorte IA, le montant moyen de prêt se situe autour de 351 ké
+ :
+Cela reflète un marché où les prêts restent concentrés sur des montants intermédiaires (≈ 250–300 kêèéé
+), d’où l’écart-type extrêmement large.
+Pour la cohorte pré-IA, aucune statistique n’est reportée (count = 0) pour loan_amount :
+Cela indique que la colonne loan_amount n’est pas disponible ou pas renseignée dans le jeu pre_ai dans sa forme actuelle.
+Ce point devra être mentionné dans le texte comme une limitation de comparabilité inter-ère sur les montants (évolution du schéma HMDA, changements d’unités ou de codage, etc.).
+Pour la rédaction, on pourra préciser que l’analyse des montants de prêts est principalement documentée pour l’ère IA, la période pré-IA étant moins exploitable sur cette dimension en raison d’un schéma de données divergent ou incomplet.
+
+4.X.3 Taux d’approbation moyens par ère (Table 4.3)
+La Table 4.3 mesure le taux d’approbation moyen (approved binaire) par ère :
+
+Ère	Taux d’approbation moyen
+IA	0,5423 (≈ 54,2 %)
+pre-IA	0,7068 (≈ 70,7 %)
+Lecture :
+
+En période pré-IA (2007–2017), environ 70–71 % des dossiers de l’échantillon sont approuvés.
+En période IA (2018–2023), le taux d’approbation moyen tombe à 54–55 %.
+La différence brute de niveau est donc d’environ −16 points de pourcentage, ce qui suggère :
+soit un durcissement général du processus d’octroi (plus de sélectivité, changement de cycle macroéconomique),
+soit un effet de recomposition de l’échantillon HMDA et de la définition de l’indicateur approved.
+Cette différence brute est ensuite ré-analysée dans le cadre du PSM (Section PSM.1–3) et des modèles logit, afin de distinguer ce qui relève d’un effet structurel (composition différente des dossiers) de ce qui pourrait s’apparenter à un effet spécifique de l’ère IA.
+
+4.X.4 Répartition fine de action_taken par ère (Table 4.4)
+La Table 4.4 détaille la distribution de action_taken (décision HMDA) par ère :
+
+Pré-IA (2007–2017)
+action_taken	Part dans pre-IA
+1.0	46,6 %
+2.0	5,0 %
+3.0	19,1 %
+4.0	9,6 %
+5.0	3,7 %
+6.0	16,0 %
+7.0	≈ 0,01 %
+8.0	≈ 0,01 %
+IA (2018–2023)
+action_taken	Part dans IA
+1.0	54,2 %
+2.0	2,0 %
+3.0	12,3 %
+4.0	12,1 %
+5.0	4,4 %
+6.0	14,8 %
+7.0	0,05 %
+8.0	0,09 %
+(La signification exacte des codes 1–8 suit la nomenclature HMDA : prêts originés, refusés, retirés, incomplets, etc. Cette correspondance sera rappelée en note ou en annexe.)
+
+Lecture :
+
+Pour les deux ères, les statuts 1.0 et 6.0 (origination / purchased, selon HMDA) concentrent une grande partie des dossiers.
+La part de action_taken = 1.0 (typiquement prêts accordés/originés) :
+passe d’environ 46,6 % pre-IA à 54,2 % IA,
+alors que le taux d’approbation moyen (Table 4.3) baisse de 70,7 % à 54,2 % :
+ce décalage indique que approved ne coïncide pas strictement avec une seule modalité action_taken (il agrège potentiellement plusieurs codes ou filtrages spécifiques à l’échantillon).
+Les catégories 3.0 et 4.0 (retraits, incomplets, etc.) restent non négligeables dans les deux périodes (≈ 19 % + 9,6 % pre-IA ; ≈ 12,3 % + 12,1 % IA), ce qui souligne l’importance de contraintes non purement “accepté/refusé” dans le pipeline d’octroi (retraits volontaires, dossiers incomplets, etc.).
+En synthèse, la Table 4.4 montre que la structure de action_taken reste relativement stable entre les deux ères, tout en suggérant des déplacements modestes entre les catégories. Combinée à la baisse du taux d’approbation moyen, cette distribution met en évidence un paysage d’octroi plus complexe que le simple binaire “approve/deny”, où la part de dossiers retirés ou incomplets joue un rôle non trivial.
+
+4.X.5 Synthèse pour la section descriptive du Chapter 4
+La cohorte IA présente une composition raciale dominée par les Whites, mais avec une proportion très élevée de dossiers à race manquante, ce qui constitue une limite méthodologique essentielle pour l’analyse de fairness.
+Les montants de prêts ne sont pleinement observables que pour l’ère IA, ce qui impose de traiter la comparaison inter-ère avec prudence sur ce volet.
+Les taux d’approbation bruts diffèrent fortement entre les deux périodes (≈ 71 % vs 54 %), motivant l’usage des approches de type PSM et logits pour démêler effets de composition et effets potentiels de l’ère IA.
+La structure détaillée de action_taken indique que l’octroi ne se réduit pas à un simple schéma binaire, mais implique des décisions intermédiaires (retraits, dossiers incomplets) qui doivent être prises en compte dans l’interprétation.
+Ces éléments descriptifs fournissent le socle empirique de la Section 4.1–4.3, sur lequel viennent ensuite se greffer les analyses plus avancées (PSM, ML cross-era, fairness, sous-groupes).
+"

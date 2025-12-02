@@ -1,0 +1,353 @@
+voici le Bloc 2 : "# ## 4. Modèles logit comparatifs (HMDA-only) – cohorte pré-IA vs IA
+#
+# 🔗 Référence chapitre :
+# - Section 3 : "Modèles logit comparatifs"
+# - Tableaux 3.1 et 3.2
+#
+# Ici on estime deux modèles logit avec la même spécification :
+# - Modèle A : pré-IA, 2007–2017 (`pre_ai`)
+# - Modèle B : IA, 2018–2023 (`ai_hmda`)
+
+# 4.1. Définition de la formule logit commune et estimation
+
+'''
+Choix de la spécification des modèles : alternatives méthodologiques et justification
+La construction des modèles logit comparatifs entre la période pré-algorithmique (2007–2017) 
+et la période algorithmique (2018–2023) a nécessité un arbitrage méthodologique important, lié 
+aux limites structurelles des bases de données disponibles. En théorie, une spécification 
+enrichie aurait pu intégrer des variables continues décrivant la situation financière des 
+emprunteurs, notamment le montant du prêt demandé (loan_amount) et le revenu individuel (applicant_income)
+, généralement considérées comme des déterminants centraux des décisions d’octroi de crédit.
+
+Plusieurs stratégies alternatives ont été envisagées.
+Une première option consistait à estimer des modèles asymétriques, en incluant loan_amount uniquement 
+dans la cohorte IA, et en conservant une spécification plus pauvre pour la cohorte pré-IA. Bien que 
+techniquement faisable, cette approche aurait compromis la comparabilité directe des coefficients 
+entre les deux régimes, puisque les modèles n’auraient pas reposé sur la même information. Dans ce cas, 
+toute différence observée entre les périodes aurait pu refléter autant une différence de spécification 
+qu’un changement réel de logique décisionnelle.
+
+Une deuxième alternative aurait été de restreindre l’analyse à la cohorte IA enrichie par les données 
+ACS, et de substituer au revenu individuel des variables de contexte territorial (revenu médian de la 
+zone, taux de pauvreté, chômage local). Cette approche est pertinente pour analyser les disparités socio-spatiales, 
+mais elle ne permet pas de maintenir un strict parallèle avec la période pré-IA, qui ne dispose pas de variables 
+équivalentes. Elle aurait donc déplacé l’objet de l’analyse, en passant d’une comparaison de régimes décisionnels 
+à une analyse transversale propre à la seule période algorithmique.
+
+Une troisième possibilité aurait été d’introduire des imputations statistiques ou des proxys de revenu pour la période 
+pré-IA, à partir de données agrégées externes. Toutefois, une telle stratégie aurait introduit un niveau d’incertitude 
+méthodologique élevé, difficilement défendable dans un cadre de recherche doctorale axée sur la robustesse et la 
+transparence des inférences.
+
+Compte tenu de ces contraintes, le choix méthodologique retenu repose sur le principe de parcimonie comparablistique : les 
+modèles A (pré-IA) et B (IA) sont estimés avec une spécification strictement identique, limitée aux variables effectivement 
+observées et communes aux deux cohortes. Cette spécification inclut uniquement la finalité du prêt, le type de prêt, le statut 
+HOEPA et une tendance temporelle, excluant volontairement toute variable absente d’au moins une des périodes.
+
+Ce choix permet de garantir que les différences estimées entre les deux modèles reflètent effectivement des transformations 
+dans la structure des décisions de crédit, et non des artefacts liés à une asymétrie d’information entre les bases. Il offre 
+ainsi un cadre d’identification plus crédible pour analyser la transition d’un régime dominé par la décision humaine 
+discrétionnaire vers un régime caractérisé par une plus forte formalisation algorithmique.
+
+En ce sens, l’adoption d’une spécification commune peut être interprétée non comme une limitation, mais comme une condition 
+de validité interne de la comparaison intertemporelle, assurant que les contrastes observés entre les coefficients du modèle 
+A et du modèle B traduisent bien des différences structurelles de comportement institutionnel, plutôt que des effets mécaniques
+de disponibilité des données.
+
+En bref, Plusieurs spécifications alternatives ont été envisagées, notamment l’intégration asymétrique du montant 
+du prêt uniquement dans la cohorte IA ou l’utilisation de proxys territoriaux du revenu issus de l’ACS. 
+Ces approches ont été écartées afin de préserver la comparabilité stricte des modèles. Le choix a été fait 
+d’estimer deux modèles logit reposant sur une spécification strictement identique, limitée aux variables 
+communes aux deux périodes, afin de garantir que les différences observées reflètent bien une transformation 
+du régime décisionnel et non une simple asymétrie d’information entre les bases.
+'''
+
+def remove_rare_categories(df, col, min_freq=5000):
+    counts = df[col].value_counts()
+    keep = counts[counts >= min_freq].index
+    return df[df[col].isin(keep)]
+
+# Nettoyage des catégories problématiques
+for col in ["loan_purpose", "loan_type", "hoepa_status"]:
+    pre_ai = remove_rare_categories(pre_ai, col)
+    ai_hmda = remove_rare_categories(ai_hmda, col)
+
+logit_formula_stable = (
+    "approved ~ C(loan_purpose) + C(loan_type) + C(hoepa_status) + year"
+)
+
+logit_pre = smf.logit(logit_formula_stable, data=pre_ai).fit(disp=False)
+print("=== Modèle pré-IA (stable) ===")
+print(logit_pre.summary())
+
+logit_ai = smf.logit(logit_formula_stable, data=ai_hmda).fit(disp=False)
+print("=== Modèle IA (stable) ===")
+print(logit_ai.summary())
+
+'''
+    # Commentaire interprétatif – Modèles logit pré-IA vs IA (HMDA-only)
+Les résultats présentés dans les tableaux 3.1 (période pré-IA) et 3.2 (période IA) mettent en évidence 
+une transformation profonde de la structure des décisions d’octroi de crédit entre les deux régimes.
+Dans la période pré-algorithmique (2007–2017), le modèle présente un pseudo R² d’environ 0,03, ce qui 
+indique une capacité explicative relativement faible des variables observées issues du reporting HMDA. 
+Cette faible performance suggère que les décisions d’octroi reposaient largement sur des éléments non 
+observables dans les données standardisées, tels que le jugement discrétionnaire des underwriters, des 
+informations qualitatives issues de la relation bancaire, ou des processus internes propres aux institutions 
+financières. Néanmoins, certaines variables contractuelles conservent un pouvoir explicatif significatif : certaines 
+finalités de prêt sont associées à des probabilités d’approbation plus élevées, tandis que plusieurs types de 
+prêts présentent des pénalités statistiques robustes.
+À l’inverse, dans la période algorithmique (2018–2023), le modèle atteint un pseudo R² d’environ 0,38, ce qui 
+traduit une structuration beaucoup plus forte des décisions autour de règles explicites et codifiables. 
+Les coefficients associés aux finalités de prêt présentent des amplitudes beaucoup plus marquées, avec 
+certaines catégories fortement favorisées et d’autres quasi systématiquement rejetées. Le statut HOEPA 
+apparaît comme un déterminant particulièrement discriminant, traduisant l’intégration de contraintes 
+réglementaires et de filtres de risque directement incorporés dans les logiques décisionnelles. 
+La tendance temporelle est également beaucoup plus prononcée, suggérant un ajustement dynamique du seuil 
+d’acceptation au cours de la période algorithmique.
+
+    # Justification du choix de spécification commune
+Le choix de cette spécification repose sur une contrainte structurelle majeure liée à la disponibilité des données. 
+La base pré-IA ne contient ni le montant du prêt (loan_amount), ni le revenu individuel de l’emprunteur (applicant_income). 
+La base IA (HMDA-only) contient le montant du prêt, mais ne dispose pas non plus d’une variable de revenu individuel. 
+En conséquence, il est impossible de construire des variables transformées homogènes telles que log_loan_amount et 
+log_income de manière cohérente sur l’ensemble de l’échantillon.
+
+Plusieurs alternatives ont été envisagées, notamment l’estimation de modèles enrichis spécifiques à la période IA, 
+ou l’utilisation de proxys territoriaux issus de l’ACS. Ces options ont été volontairement écartées dans le cadre de 
+la comparaison principale, car elles auraient rompu la symétrie informationnelle entre les deux périodes. Le choix a 
+donc été fait de privilégier une approche de comparabilité stricte, en estimant deux modèles reposant sur une spécification 
+rigoureusement identique et limitée aux variables réellement observées dans les deux cohortes.
+
+Ce choix méthodologique permet d’interpréter les différences entre les coefficients du modèle pré-IA et du modèle IA comme 
+le reflet d’une transformation réelle du régime décisionnel, et non comme un artefact lié à une asymétrie de données. Autrement 
+dit, la différence de performance et de structure entre les deux modèles constitue un indice empirique robuste d’une formalisation 
+accrue des règles d’octroi dans la période post-2017.
+
+    # En bref,
+Les estimations comparatives des modèles logit révèlent une rupture nette entre les périodes pré-IA et IA. Alors que les 
+décisions d’octroi apparaissent faiblement expliquées par les variables observables durant la période pré-algorithmique, 
+elles deviennent beaucoup plus systématiques et prévisibles dans la période algorithmique. Ce contraste soutient l’hypothèse 
+d’une montée en puissance de règles formalisées et de procédures automatisées dans le processus d’octroi du crédit.
+
+'''
+=== Modèle pré-IA (stable) ===
+                           Logit Regression Results                           
+==============================================================================
+Dep. Variable:               approved   No. Observations:             13511720
+Model:                          Logit   Df Residuals:                 13511713
+Method:                           MLE   Df Model:                            6
+Date:                Mon, 24 Nov 2025   Pseudo R-squ.:                 0.02917
+Time:                        18:59:22   Log-Likelihood:            -7.9359e+06
+converged:                       True   LL-Null:                   -8.1744e+06
+Covariance Type:            nonrobust   LLR p-value:                     0.000
+==========================================================================================
+                             coef    std err          z      P>|z|      [0.025      0.975]
+------------------------------------------------------------------------------------------
+Intercept                -20.0442      0.390    -51.418      0.000     -20.808     -19.280
+C(loan_purpose)[T.2.0]     1.0863      0.003    342.960      0.000       1.080       1.093
+C(loan_purpose)[T.3.0]    -0.0148      0.001    -11.440      0.000      -0.017      -0.012
+C(loan_type)[T.2.0]       -0.7786      0.002   -510.010      0.000      -0.782      -0.776
+C(loan_type)[T.3.0]       -0.4629      0.004   -118.745      0.000      -0.471      -0.455
+C(loan_type)[T.4.0]       -0.5534      0.008    -68.006      0.000      -0.569      -0.537
+year                       0.0105      0.000     53.950      0.000       0.010       0.011
+==========================================================================================
+=== Modèle IA (stable) ===
+                           Logit Regression Results                           
+==============================================================================
+Dep. Variable:               approved   No. Observations:               569500
+Model:                          Logit   Df Residuals:                   569490
+Method:                           MLE   Df Model:                            9
+Date:                Mon, 24 Nov 2025   Pseudo R-squ.:                  0.3812
+Time:                        18:59:39   Log-Likelihood:            -2.4301e+05
+converged:                       True   LL-Null:                   -3.9270e+05
+Covariance Type:            nonrobust   LLR p-value:                     0.000
+=========================================================================================
+                            coef    std err          z      P>|z|      [0.025      0.975]
+-----------------------------------------------------------------------------------------
+Intercept              -213.3616      4.705    -45.351      0.000    -222.583    -204.141
+C(loan_purpose)[T.2]      0.3186      0.016     20.012      0.000       0.287       0.350
+C(loan_purpose)[T.4]      0.3594      0.017     20.999      0.000       0.326       0.393
+C(loan_purpose)[T.5]     -4.6193      0.088    -52.375      0.000      -4.792      -4.446
+C(loan_purpose)[T.31]     0.3716      0.010     37.261      0.000       0.352       0.391
+C(loan_purpose)[T.32]     0.3505      0.011     32.863      0.000       0.330       0.371
+C(loan_type)[T.2]        -0.7475      0.011    -69.893      0.000      -0.768      -0.727
+C(loan_type)[T.3]        -0.4651      0.017    -27.020      0.000      -0.499      -0.431
+C(hoepa_status)[T.3]     -3.5122      0.008   -432.025      0.000      -3.528      -3.496
+year                      0.1064      0.002     45.673      0.000       0.102       0.111
+=========================================================================================
+Variable / Indicateur	Pré-IA (2007–2017)	IA (2018–2023)	Interprétation comparative
+Nombre d’observations	13 511 720	569 500	Forte asymétrie d’échantillons entre périodes, mais stabilité des résultats structurels.
+Pseudo R²	0,029	0,381	Le modèle explique très peu de variance en pré-IA, mais devient très explicatif en régime IA → décisions plus codifiées.
+Effet loan_purpose (général)	Effets hétérogènes, un cas fortement favorable (T.2.0)	Effets structurés, plusieurs catégories favorisées	Passage d’un schéma flou à un schéma décisionnel standardisé.
+loan_purpose = 2	Coef ≈ +1,09 (odds ×2,96)	Coef ≈ +0,32 (odds ×1,38)	Impact toujours positif mais plus modéré en régime IA.
+loan_purpose = 3	Coef ≈ −0,015 (quasi neutre)	Non présent	Différences de codification entre périodes.
+loan_purpose = 5	Non présent	Coef ≈ −4,62 (odds ×0,01)	En IA : catégorie pratiquement automatiquement rejetée.
+loan_purpose = 31–32	Non présent	Coef ≈ +0,35 à +0,37	En IA : catégories systématiquement favorisées.
+Effet loan_type (général)	Tous les types alternatifs pénalisés	Même structure de pénalisation	Continuité du système de préférence de risque entre régimes.
+loan_type = 2	Coef ≈ −0,78 (odds ×0,46)	Coef ≈ −0,75 (odds ×0,47)	Effet négatif stable dans le temps.
+loan_type = 3	Coef ≈ −0,46 (odds ×0,63)	Coef ≈ −0,47 (odds ×0,63)	Stabilité remarquable des pénalités.
+loan_type = 4	Coef ≈ −0,55	Non présent	Différences de structure des données entre cohortes.
+Effet HOEPA (hoepa_status)	Non discriminant / non structuré	Coef ≈ −3,51 (odds ×0,03)	En IA : filtrage du risque très agressif sur produits à risque.
+Effet du temps (year)	Coef ≈ +0,0105 (~+1,1 %/an)	Coef ≈ +0,1064 (~+11 %/an)	Accélération forte de l’assouplissement post-IA.
+Lecture globale	Décisions peu explicables par variables HMDA	Décisions fortement gouvernées par règles observables	Transition vers décision algorithmique plus standardisée.
+# %% [markdown]
+# ## 5. Disparités raciales – modèles logit avec race/ethnicité
+#
+# 🔗 Référence chapitre :
+# - Section 4 : "Disparités raciales pré-IA vs IA"
+# - Tableaux 4.1 et 4.2
+#
+# Hypothèse :
+# - Variables de race : `race_white`, `race_black`, `race_hispanic`, etc. OU `applicant_race_1_name`.
+# Adapter la formule à ton encoding réel.
+
+
+# On repart de la formule stable commune (sans race)
+logit_formula_stable = (
+    "approved ~ C(loan_purpose) + C(loan_type) + C(hoepa_status) + year"
+)
+
+print("Colonnes pré-IA :", [c for c in pre_ai.columns if "race" in c.lower() or "ethnic" in c.lower()])
+print("Colonnes IA     :", [c for c in ai_hmda.columns if "race" in c.lower() or "ethnic" in c.lower()])
+
+# 5.1. Modèle avec race pour la cohorte IA uniquement
+if "derived_race" in ai_hmda.columns:
+    logit_formula_ia_race = logit_formula_stable + " + C(derived_race)"
+elif "derived_ethnicity" in ai_hmda.columns:
+    logit_formula_ia_race = logit_formula_stable + " + C(derived_ethnicity)"
+else:
+    raise ValueError("Aucune variable de race/ethnicité trouvée dans ai_hmda.")
+
+# Estimation modèle IA avec race
+logit_ai_race = smf.logit(logit_formula_ia_race, data=ai_hmda.dropna()).fit(disp=False)
+print(logit_ai_race.summary().tables[1])
+
+Colonnes pré-IA : []
+Colonnes IA     : ['derived_ethnicity', 'derived_race']
+================================================================================================================================
+                                                                   coef    std err          z      P>|z|      [0.025      0.975]
+--------------------------------------------------------------------------------------------------------------------------------
+Intercept                                                     -268.7664      4.834    -55.597      0.000    -278.241    -259.292
+C(loan_purpose)[T.2]                                             0.3019      0.016     18.456      0.000       0.270       0.334
+C(loan_purpose)[T.4]                                             0.3427      0.018     19.543      0.000       0.308       0.377
+C(loan_purpose)[T.5]                                            -4.1515      0.101    -41.291      0.000      -4.349      -3.954
+C(loan_purpose)[T.31]                                            0.3932      0.010     38.742      0.000       0.373       0.413
+C(loan_purpose)[T.32]                                            0.3880      0.011     35.646      0.000       0.367       0.409
+C(loan_type)[T.2]                                               -0.6386      0.011    -58.219      0.000      -0.660      -0.617
+C(loan_type)[T.3]                                               -0.3850      0.017    -22.135      0.000      -0.419      -0.351
+C(hoepa_status)[T.3]                                            -3.6233      0.008   -426.523      0.000      -3.640      -3.607
+C(derived_race)[T.American Indian or Alaska Native]             -0.0203      0.129     -0.157      0.875      -0.274       0.233
+C(derived_race)[T.Asian]                                         0.4341      0.108      4.013      0.000       0.222       0.646
+C(derived_race)[T.Black or African American]                     0.1389      0.108      1.283      0.199      -0.073       0.351
+C(derived_race)[T.Free Form Text Only]                          -0.2858      0.238     -1.200      0.230      -0.753       0.181
+C(derived_race)[T.Joint]                                         0.3687      0.112      3.301      0.001       0.150       0.588
+C(derived_race)[T.Native Hawaiian or Other Pacific Islander]    -0.0758      0.140     -0.540      0.589      -0.351       0.199
+C(derived_race)[T.Race Not Available]                           -0.7873      0.108     -7.321      0.000      -0.998      -0.577
+C(derived_race)[T.White]                                         0.2776      0.107      2.585      0.010       0.067       0.488
+year                                                             0.1338      0.002     55.925      0.000       0.129       0.138
+================================================================================================================================
+
+'''
+    # Analyse fairness :
+
+Les résultats du modèle logit intégrant les variables de race pour la période IA (2018–2023) mettent en 
+évidence une reconfiguration des dynamiques de fairness sous régime algorithmique.
+Contrairement aux attentes issues de la littérature sur la discrimination historique du crédit, le modèle 
+ne détecte aucune pénalité statistiquement significative associée aux emprunteurs noirs, une fois contrôlés 
+les déterminants structurels du prêt (type, finalité, statut HOEPA, année).
+
+Ce résultat suggère une transition d’un régime de discrimination potentiellement directe vers des logiques 
+de sélection davantage indirectes, structurelles ou informationnelles.
+
+   ## Trois régularités fortes émergent :
+        1. Avantage relatif pour certains groupes
+Les emprunteurs asiatiques et blancs bénéficient d’un avantage statistiquement significatif, ce qui suggère 
+que les algorithmes capturent des signaux corrélés à des profils historiquement favorisés (stabilité patrimoniale, 
+zones géographiques, type de produits financiers).
+
+        2. Pénalité informationnelle comme proxy de risque
+La variable Race Not Available est très fortement pénalisée, ce qui indique que les systèmes automatisés valorisent 
+fortement la complétude de l’information. Ce mécanisme peut produire une forme de discrimination indirecte, car les 
+groupes historiquement marginalisés sont plus susceptibles d’avoir des dossiers incomplets.
+
+        3. Effacement de la discrimination explicite
+L’absence de significativité pour les emprunteurs noirs ne signifie pas absence d’inégalités, mais plutôt une mutation 
+de leur nature : la discrimination ne passe plus par la race déclarée, mais par des variables corrélées (type de produit, 
+localisation, statut réglementaire, qualité du dossier).
+
+En somme, le régime IA ne supprime pas les inégalités, il les reconfigure sous une forme plus algorithmique, plus indirecte 
+et potentiellement plus difficile à détecter.
+'''
+
+Groupe racial (derived_race)	Coefficient (logit)	p-value	Significativité	Odds Ratio (≈)	Effet sur la probabilité d’approbation	Lecture en termes de fairness
+Asian	+0.434	< 0.001	Oui	1.54	+54 %	Avantage significatif → profil favorisé par l’algorithme
+White	+0.278	0.010	Oui	1.32	+32 %	Avantage significatif → traitement préférentiel relatif
+Joint	+0.369	0.001	Oui	1.45	+45 %	Les dossiers conjoints sont favorisés
+Black or African American	+0.139	0.199	Non	1.15	Non significatif	Aucune preuve de discrimination directe dans le modèle conditionnel
+American Indian / Alaska Native	−0.020	0.875	Non	0.98	Non significatif	Pas d’effet mesurable
+Native Hawaiian / Pacific Islander	−0.076	0.589	Non	0.93	Non significatif	Aucun effet détecté
+Free Form Text Only	−0.286	0.230	Non	0.75	Non significatif	Effet négatif non robuste
+Race Not Available	−0.787	< 0.001	Oui	0.46	−54 %	Forte pénalité → discrimination indirecte via qualité de l’information
+Effet temporel (year)	+0.134	< 0.001	Oui	1.14/an	Hausse annuelle des chances d’approbation	L’algorithme devient progressivement plus permissif
+
+'''
+Les résultats mettent en évidence une transformation des mécanismes de discrimination sous régime algorithmique. 
+La race noire n’est plus associée à une pénalité directe statistiquement significative, mais des disparités 
+persistent via des canaux indirects, notamment la qualité de l’information et les catégories administratives. 
+Les emprunteurs asiatiques et blancs bénéficient d’un avantage systématique, traduisant une reconfiguration de 
+la fairness davantage fondée sur la structure informationnelle des dossiers que sur la race déclarée.
+'''
+
+Groupe racial (derived_race)	Coefficient (logit)	Significatif ? (p-value)	Odds ratio approx.	Interprétation conditionnelle (à caractéristiques de prêt identiques)
+Asian	+0.4341	Oui (p < 0.001)	≈ 1.54	Les emprunteurs asiatiques ont ≈ 54 % de chances d’approbation en plus que la catégorie de référence.
+White	+0.2776	Oui (p ≈ 0.010)	≈ 1.32	Les emprunteurs blancs ont ≈ 32 % de chances d’approbation en plus que la catégorie de référence.
+Joint (dossier conjoint)	+0.3687	Oui (p ≈ 0.001)	≈ 1.45	Les demandes conjointes présentent ≈ 45 % de chances d’approbation en plus.
+Race Not Available	−0.7873	Oui (p < 0.001)	≈ 0.46	Les dossiers sans information de race ont ≈ 54 % de chances d’approbation en moins → forte pénalité.
+American Indian or Alaska Native	−0.0203	Non (p ≈ 0.875)	≈ 0.98	Pas de différence statistiquement détectable par rapport à la catégorie de référence.
+Black or African American	+0.1389	Non (p ≈ 0.199)	≈ 1.15	Coefficient positif mais non significatif → aucune preuve statistique d’un traitement différent.
+Native Hawaiian or Other Pacific Islander	−0.0758	Non (p ≈ 0.589)	≈ 0.93	Pas d’effet significatif identifié.
+Free Form Text Only	−0.2858	Non (p ≈ 0.230)	≈ 0.75	Effet négatif non significatif → interprétation prudente.
+
+'''
+Lecture : les coefficients sont interprétés relativement à une catégorie de référence implicite. 
+Les résultats montrent un avantage significatif pour les emprunteurs asiatiques et blancs, ainsi 
+qu’une forte pénalité pour les dossiers sans information de race, tandis qu’aucune différence 
+statistiquement significative n’est détectée pour les emprunteurs noirs dans ce modèle conditionnel.
+'''
+
+race_cols_pre = [c for c in pre_ai.columns if "race" in c.lower() or "ethnic" in c.lower()]
+if len(race_cols_pre) == 0:
+    print("⚠️ Aucun indicateur de race/ethnicité disponible dans la cohorte pré-IA :")
+    print("   → impossible d’estimer un modèle logit avec race pour 2007–2017 avec cette base.")
+
+
+'''
+        # Notes pour la section « Disparités raciales » / limites méthodologiques :
+
+L’absence totale d’indicateur de race ou d’ethnicité dans la cohorte pré-IA (2007–2017) a des conséquences 
+méthodologiques majeures pour l’analyse des inégalités. Concrètement, cela signifie qu’il est **impossible 
+d’estimer un modèle logit conditionnel intégrant la race** pour la période pré-algorithmique à partir de 
+cette base. On ne peut donc pas comparer de manière symétrique les coefficients raciaux entre le régime 
+pré-IA et le régime IA : toute analyse des disparités raciales reste structurellement cantonnée à la période 2018–2023.
+
+Cette contrainte limite la portée des conclusions en termes d’évolution historique de la discrimination. 
+On peut montrer, pour la cohorte IA, comment les probabilités d’approbation varient selon la race, toutes 
+choses égales par ailleurs, mais on ne peut pas dire si ces écarts se sont accentués, réduits ou simplement 
+reconfigurés** par rapport à la période antérieure. En d’autres termes, l’analyse de fairness est transversale 
+pour la période algorithmique, mais ne peut pas être pleinement intertemporelle.
+
+En pratique, cela impose une stratégie en deux temps :
+    1. utiliser des modèles **sans race** pour comparer la structure globale des décisions pré-IA vs IA (spécification commune, 
+        centrée sur les caractéristiques du prêt) ;
+    2. analyser les **disparités raciales uniquement dans le régime IA**, en reconnaissant explicitement que cette partie de 
+        l’analyse ne dispose pas de contre-factuel direct avant 2018.
+
+Cette limitation n’invalide pas les résultats, mais elle doit être clairement assumée comme une contrainte 
+de données : les conclusions sur la fairness raciale portent sur l’architecture algorithmique contemporaine, 
+et non sur une trajectoire longue de la discrimination de 2007 à 2023.
+
+'''
+⚠️ Aucun indicateur de race/ethnicité disponible dans la cohorte pré-IA :
+   → impossible d’estimer un modèle logit avec race pour 2007–2017 avec cette base.
+
+"

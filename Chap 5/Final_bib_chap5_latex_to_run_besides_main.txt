@@ -1,0 +1,131 @@
+@article{Agarwal2015,
+  title={The effects of credit competition on lenders’ risk taking},
+  author={Agarwal, Sumit and Ben-David, Itzhak and Seru, Amit},
+  journal={Journal of Financial Economics},
+  year={2015}
+}
+
+@article{BarocasSelbst2016,
+  title={Big Data’s Disparate Impact},
+  author={Barocas, Solon and Selbst, Andrew},
+  journal={California Law Review},
+  year={2016},
+  volume={104},
+  number={3},
+  pages={671--732}
+}
+
+@article{Bartlett2022,
+  title={Consumer-lending discrimination in the FinTech era},
+  author={Bartlett, Robert and Morse, Adair and Stanton, Richard and Wallace, Nancy},
+  journal={Journal of Finance},
+  year={2022}
+}
+
+@article{Bhutta2021,
+  title={The Decline of Access to Credit},
+  author={Bhutta, Neil and Blair, John and Dettling, Lisa},
+  journal={Federal Reserve Board Working Paper},
+  year={2021}
+}
+
+@inproceedings{BuolamwiniGebru2018,
+  title={Gender Shades: Intersectional Accuracy Disparities in Commercial Gender Classification},
+  author={Buolamwini, Joy and Gebru, Timnit},
+  booktitle={Proceedings of the Conference on Fairness, Accountability, and Transparency (FAT*)},
+  year={2018}
+}
+
+@techreport{CFPB2019,
+  title={Mortgage Market Trends},
+  author={{Consumer Financial Protection Bureau}},
+  year={2019},
+  institution={CFPB}
+}
+
+@article{CowgillTucker2020,
+  title={Economics of Artificial Intelligence},
+  author={Cowgill, Bo and Tucker, Catherine},
+  journal={Journal of Economic Perspectives},
+  year={2020}
+}
+
+@book{Friedman2001,
+  title={The Elements of Statistical Learning},
+  author={Friedman, Jerome and Hastie, Trevor and Tibshirani, Robert},
+  year={2001},
+  publisher={Springer}
+}
+
+@article{Fuster2019,
+  title={Predictably unequal? The effects of machine learning on credit markets},
+  author={Fuster, Andreas and Goldsmith-Pinkham, Paul and Ramcharan, Rodney and Vickery, James},
+  journal={Review of Financial Studies},
+  year={2019}
+}
+
+@article{Gyourko2014,
+  title={A regional analysis of mortgage lending},
+  author={Gyourko, Joseph and Tracy, Joseph},
+  journal={Regional Science and Urban Economics},
+  year={2014}
+}
+
+@article{Hardy2023,
+  title={AI, Segregation, and Financial Inequality},
+  author={Hardy, Bradley and Logan, Trevon and Pustejovsky, James},
+  journal={Economic Policy Review},
+  year={2023}
+}
+
+@book{KearnsRoth2020,
+  title={The Ethical Algorithm},
+  author={Kearns, Michael and Roth, Aaron},
+  year={2020},
+  publisher={Oxford University Press}
+}
+
+@article{Kleinberg2018,
+  title={Human decisions and machine predictions},
+  author={Kleinberg, Jon and Ludwig, Jens and Mullainathan, Sendhil and Sunstein, Cass},
+  journal={Quarterly Journal of Economics},
+  year={2018}
+}
+
+@book{MasseyDenton1993,
+  title={American Apartheid: Segregation and the Making of the Underclass},
+  author={Massey, Douglas S. and Denton, Nancy A.},
+  year={1993},
+  publisher={Harvard University Press}
+}
+
+@article{MullainathanSpiess2017,
+  title={Machine learning: An applied econometrics approach},
+  author={Mullainathan, Sendhil and Spiess, Jann},
+  journal={Journal of Economic Perspectives},
+  year={2017},
+  volume={31},
+  number={2},
+  pages={87--106}
+}
+
+@book{Rothstein2018,
+  title={The Color of Law: A Forgotten History of How Our Government Segregated America},
+  author={Rothstein, Richard},
+  publisher={Liveright Publishing},
+  year={2018}
+}
+
+@article{Selbst2019,
+  title={Fairness and Abstraction in Sociotechnical Systems},
+  author={Selbst, Andrew D. and Boyd, Danah and Friedler, Sorelle A. and Venkatasubramanian, Suresh and Vertesi, Janet},
+  journal={Proceedings of the Conference on Fairness, Accountability, and Transparency},
+  year={2019}
+}
+
+@book{Squires2017,
+  title={The Fight for Fair Housing},
+  author={Squires, Gregory},
+  publisher={Routledge},
+  year={2017}
+}
