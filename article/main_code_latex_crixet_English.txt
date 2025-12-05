@@ -1,0 +1,273 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- PACKAGES ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{lmodern}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage{siunitx}
+\usepackage{apacite}
+\sisetup{detect-all}
+
+\onehalfspacing
+
+% ---------- TITLE ----------
+\title{Intra-regional heterogeneity of AI-based scoring systems:\\
+Evidence from New York, New Jersey, and Connecticut (2007--2023)}
+\author{M.~NAPO Tchin}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This article extends a previous tri-state analysis of scoring systems in the New York metropolitan area by focusing on cross-state heterogeneity. Using HMDA and ACS data for New York (NY), New Jersey (NJ), and Connecticut (CT), we compare the pre-AI period (2007--2017), dominated by human expertise, to the period of widespread adoption of machine learning models (2018--2023). The study relies on logistic models, Random Forests, and XGBoost, as well as a set of fairness metrics (disparate impact, equal opportunity, calibration) computed from a common structural Random Forest model.
+
+The results show (i) a generalized increase in approval rates in all three states after the introduction of AI, (ii) a sharp improvement in predictive performance, with AUCs rising from around 0{,}60 in the pre-AI period to 0{,}90 and above in the AI period, and (iii) the persistence of marked disparities across income groups and racial groups, with particularly pronounced gaps for Black borrowers. Connecticut appears to be both the most accurate and the least polarized state, whereas New Jersey concentrates the strongest ``tensions'' between performance, socio-economic segmentation, and risks of disparate impact. These findings suggest that federal-level regulatory harmonization may conceal highly heterogeneous decision regimes and risk profiles within the Tri-State region itself.
+\end{abstract}
+
+\section{Introduction}
+
+Recent work on U.S. mortgage credit documents a twofold transition. On the one hand, there has been a progressive substitution of algorithmic scoring systems for traditional underwriting practices, in a context of intensified competition among lenders and a reconfiguration of access to credit \cite{Agarwal2015, Bhutta2021, Fuster2019, CFPB2019}. On the other hand, concerns about non-discrimination and fairness in automated decision systems have grown significantly \cite{BarocasSelbst2016, MullainathanSpiess2017, KearnsRoth2020}.
+
+In the credit domain, several studies show that the introduction of machine learning can simultaneously improve predictive accuracy and alter the distribution of credit access across groups \cite{Fuster2019, Bartlett2022, Hardy2023}. Beyond finance, similar patterns have been documented in computer vision and facial recognition applications, where systematic performance gaps across demographic groups have been identified \cite{BuolamwiniGebru2018}. Taken together, these contributions support the view that AI models operate within socio-technical systems already structured by power relations, mechanisms of segregation, and historical trajectories \cite{MasseyDenton1993, Rothstein2018, Squires2017, Selbst2019}.
+
+The objective of this article is twofold. First, we propose an \emph{intra-regional} decomposition that examines each of the three states in the Tri-State region separately, in terms of approval rates, income gradients, and predictive performance. Second, we assess the extent to which the fairness properties of the models---in particular the disparate impact by race---vary across states and interact with the local structure of the credit market and the spatial legacy of residential segregation \cite{Gyourko2014, Rothstein2018}.
+
+Our decomposition shows that the transition to AI has not been homogeneous: while the three states converge toward similar levels of predictive performance, they remain differentiated in terms of socio-economic segmentation and disparate impact risks. This internal heterogeneity is crucial from a regulatory standpoint, since models that are acceptable at an aggregated tri-state level may produce contested outcomes in specific jurisdictions \cite{CowgillTucker2020, KearnsRoth2020}.
+
+\section{Data and empirical strategy}
+
+The data used here are identical to those in the previous tri-state study, but are exploited at a finer level of aggregation. The \texttt{hmda\_tristate\_core\_2007\_2024\_v2} database provides \num{14163286} mortgage applications for the Tri-State region. After restricting to the years 2007--2017 and to the three states, we obtain a pre-AI cohort of \num{13512746} observations, distributed as follows: \num{6192532} for NY, \num{5281836} for NJ, and \num{2038378} for CT (Table~\ref{tab:sample_size}). Approval is defined using the regulatory variable \texttt{action\_taken} (1 = loan originated).
+
+For the AI period, we use the merged HMDA+ACS dataset \texttt{hmda\_acs\_tristate\_2018\_2023\_FINAL}, which combines detailed HMDA information with socio-economic characteristics from the ACS at the \textit{census tract} level (median income, poverty rate, unemployment, racial composition, etc.). The AI cohort (2018--2023) contains \num{571820} observations, of which \num{274560} for NY, \num{207169} for NJ, and \num{90091} for CT.
+
+\begin{table}[htbp]
+\centering
+\caption{Sample sizes by state and period}
+\label{tab:sample_size}
+\begin{tabular}{lrr}
+\toprule
+ & Pre-AI 2007--2017 & AI 2018--2023 \\
+\midrule
+New York (NY)      & \num{6192532} & \num{274560} \\
+New Jersey (NJ)    & \num{5281836} & \num{207169} \\
+Connecticut (CT)   & \num{2038378} & \num{90091}  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Income segments and racial groups}
+
+Income groups are constructed from the distribution of ACS median income at the \textit{census tract} level, using terciles: \emph{Low}, \emph{Middle}, and \emph{High}. At the tri-state level, these groups are of comparable size (around 172 to 177 thousand observations each, excluding missing values), which ensures stable estimation in each state.
+
+Racial groups are based on the HMDA variable \texttt{derived\_race}, recoded for fairness analyses into five aggregate categories: \emph{White}, \emph{Black / African-American}, \emph{Asian}, \emph{Other} (pooled minority categories), and \emph{Not reported}. This aggregation follows supervisory practice when evaluating disparate impact risk using HMDA data and builds on debates about residential segregation and differential access to credit \cite{MasseyDenton1993, Squires2017}.
+
+\subsection{Predictive modeling and fairness}
+
+To address RQ2, we estimate, separately by state and period (pre-AI vs AI), three classification models: a standard logistic regression, a Random Forest, and XGBoost. The common predictors are \texttt{loan\_purpose}, \texttt{loan\_type}, \texttt{hoepa\_status}, and \texttt{year}, encoded via indicator variables. The data are split into training and test samples (70/30, stratified on the outcome), which allows us to compare out-of-sample performance in terms of accuracy, F1-score, and ROC AUC (see Table~\ref{tab:auc_state}). This design follows best practices in applied economics and econometrics using machine learning \cite{Friedman2001, MullainathanSpiess2017}.
+
+For RQ4, we estimate a structural Random Forest on the entire tri-state AI cohort, with predictors \texttt{loan\_purpose}, \texttt{loan\_type}, \texttt{hoepa\_status}, \texttt{state\_code}, and \texttt{year}. Based on binary and probabilistic predictions (respectively \( \hat{y} \) and \( \hat{p} \)), we compute, for each (state, racial group) pair, a set of fairness metrics: predicted positive rate, disparate impact vs White, true positive rate (TPR) and equal opportunity difference, false negative rate (FNR), positive predictive value (PPV) and predictive parity difference, and a calibration measure (Brier score). Groups with fewer than 150 observations are excluded to avoid unstable estimates. The main fairness results are summarized in Table~\ref{tab:di_race_state}.
+
+\begin{table}[htbp]
+\centering
+\caption{Overall approval rates by state and period}
+\label{tab:approval_rates}
+\begin{tabular}{lccc}
+\toprule
+ & Pre-AI (2007--2017) & AI (2018--2023) & Change (pp) \\
+\midrule
+New York (NY)    & 46{,}7\% & 55{,}4\% & +8{,}7 \\
+New Jersey (NJ)  & 45{,}6\% & 51{,}4\% & +5{,}7 \\
+Connecticut (CT) & 49{,}0\% & 57{,}2\% & +8{,}2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Odds ratios (OR) by income group in the AI period (ref. High)}
+\label{tab:or_income}
+\begin{tabular}{lcc}
+\toprule
+State & Middle vs High & Low vs High \\
+\midrule
+New York (NY)    & 0{,}887 & 0{,}80 \\
+New Jersey (NJ)  & 0{,}848 & 0{,}70 \\
+Connecticut (CT) & 0{,}89  & 0{,}70 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Out-of-sample ROC AUC by state, period, and model}
+\label{tab:auc_state}
+\begin{tabular}{llccc}
+\toprule
+Period & State & Logit & Random Forest & XGBoost \\
+\midrule
+Pre-AI & NY & 0{,}596 & 0{,}609 & 0{,}609 \\
+       & NJ & 0{,}573 & 0{,}592 & 0{,}591 \\
+       & CT & 0{,}570 & 0{,}595 & 0{,}595 \\
+\midrule
+AI     & NY & 0{,}856 & 0{,}913 & 0{,}912 \\
+       & NJ & 0{,}850 & 0{,}899 & 0{,}898 \\
+       & CT & 0{,}886 & 0{,}925 & 0{,}925 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Disparate impact (DI) by race and state in the AI period (ref. White)}
+\label{tab:di_race_state}
+\begin{tabular}{lcccc}
+\toprule
+ & Black & Asian & Other & Not reported \\
+\midrule
+New York (NY)    & 0{,}81 & 0{,}91 & 0{,}94 & 0{,}80 \\
+New Jersey (NJ)  & 0{,}80 & 0{,}95 & 0{,}96 & 0{,}92 \\
+Connecticut (CT) & 0{,}87 & 0{,}88 & 0{,}94 & 0{,}92 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{State-level results}
+
+\subsection{New York}
+
+\paragraph{Approval rates and descriptive gradients.}
+
+In New York, the overall approval rate rises from about \(46{,}7\,\%\) in the pre-AI period to \(55{,}4\,\%\) in the AI period (Table~\ref{tab:approval_rates}), i.e., an increase of roughly \(+8{,}7\) percentage points. In the AI period, approval rates vary markedly by race and income level, with lower rates for Black borrowers and for low-income tracts. ANOVA on the AI period confirms substantial heterogeneity in approval rates by race and income, with large \(F\)-statistics and near-zero p-values.
+
+\paragraph{Income effects in a logit model.}
+
+The logit model \emph{approval} \(\sim\) \(\text{income\_group}\) (ref. High) reveals a monotonic gradient (Table~\ref{tab:or_income}). In the AI period, the approval odds ratio (OR) for Middle-income households is \(0{,}887\), and \(0{,}80\) for Low-income households, corresponding to a significant reduction in approval probabilities for households at the bottom of the income distribution.
+
+\paragraph{Predictive performance and ROC.}
+
+Predictive performance follows a clear trajectory (see Table~\ref{tab:auc_state}): in the pre-AI period, the ROC AUC of the logistic regression is about \(0{,}596\), and around \(0{,}609\) for Random Forest and XGBoost. In the AI period, AUCs reach \(0{,}856\) for Logit and about \(0{,}913\) for ensemble tree models. The AI-period ROC curves (Figure~\ref{fig:roc_ny}) lie well above the diagonal, indicating a strong ability of the model to reproduce the approval decisions observed in the New York market.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures_article/art_fig_ny_roc_pre_vs_ai.png}
+    \caption{ROC curves by model and period for New York (pre-AI 2007--2017 and AI period 2018--2023).}
+    \label{fig:roc_ny}
+\end{figure}
+
+\paragraph{Fairness and disparate impact.}
+
+From a fairness perspective, the structural Random Forest model reveals a hierarchy of predicted positive rates (Table~\ref{tab:di_race_state}). The disparate impact (DI) for Black borrowers is about \(0{,}81\) relative to White borrowers, close to but above the regulatory 80\% rule. Asian and \emph{Other} groups display high DI values, while \emph{Not reported} cases also cluster around \(0{,}80\). AI makes the decision process more predictable but leaves a substantial disadvantage for Black borrowers and for applications with missing race information, in line with the diagnoses of indirect discrimination and proxy discrimination discussed by \citeA{BarocasSelbst2016} and \citeA{KearnsRoth2020}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures_article/art_fig_ny_ia_di_by_race_rf.png}
+    \caption{Disparate impact by racial group in New York in the AI period (structural Random Forest, ref. White).}
+    \label{fig:di_ny}
+\end{figure}
+
+\newpage
+\subsection{New Jersey}
+
+\paragraph{Approval rates.}
+
+In New Jersey, the overall approval rate increases from about \(45{,}6\,\%\) in the pre-AI period to \(51{,}4\,\%\) in the AI period (Table~\ref{tab:approval_rates}), a more modest rise than in New York and Connecticut. In the AI period, approval rates by race remain strongly differentiated, with much lower levels for Black borrowers and for \emph{Not reported} cases. ANOVA yields the highest \(F\)-statistics in the region, indicating particularly pronounced racial and socio-economic segmentation, consistent with evidence on the fragmentation of credit access \cite{Bhutta2021}.
+
+\paragraph{Logit and income gradient.}
+
+In the logit model, the Middle-income group has an OR of \(0{,}848\), and the Low-income group an OR of \(0{,}70\) relative to High-income borrowers (Table~\ref{tab:or_income}). These are among the most adverse odds in the region for low-income households and translate into about a 30\% reduction in approval probabilities for the Low group, echoing the analysis of \citeA{Agarwal2015} on competition and risk selection in lending portfolios.
+
+\paragraph{Predictive performance.}
+
+Performance patterns are similar to those in NY, but at slightly lower levels (Table~\ref{tab:auc_state}). In the AI period, the Logit AUC is around \(0{,}85\), and about \(0{,}90\) for Random Forest and XGBoost. The AI-period ROC curve (Figure~\ref{fig:roc_nj}) signals a highly systematic decision process, while still raising questions about the equity of the replicated decisions.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures_article/art_fig_nj_roc_pre_vs_ai.png}
+    \caption{ROC curves by model and period for New Jersey (pre-AI 2007--2017 and AI period 2018--2023).}
+    \label{fig:roc_nj}
+\end{figure}
+
+\paragraph{Fairness: a borderline case.}
+
+The fairness metrics suggest that New Jersey is the most sensitive case in the Tri-State region (Table~\ref{tab:di_race_state}). The DI for Black borrowers is close to \(0{,}80\), i.e., exactly at the 80\% rule threshold. Asian and \emph{Other} groups show high DI values, while the \emph{Not reported} group reaches a DI of about \(0{,}92\) but exhibits weaker calibration. The combination of a steep income gradient, strong racial disparities, and high predictive power of the AI model makes New Jersey an environment where legal risks related to disparate impact are particularly acute, resonating with recent debates on discrimination in fintech credit \cite{Bartlett2022}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures_article/art_fig_nj_ia_di_by_race_rf.png}
+    \caption{Disparate impact by racial group in New Jersey in the AI period (structural Random Forest, ref. White).}
+    \label{fig:di_nj}
+\end{figure}
+
+\newpage
+\subsection{Connecticut}
+
+\paragraph{Approval rates and gradients.}
+
+Connecticut stands out with the highest approval rates in the region. The transition from the pre-AI to the AI period is associated with an increase in the overall approval rate from about \(49{,}0\,\%\) to \(57{,}2\,\%\) (Table~\ref{tab:approval_rates}). In the AI period, approval rates by race exceed those observed in the other two states, but low-income tracts remain clearly disadvantaged.
+
+ANOVA yields statistically significant \(F\)-statistics, but less extreme than in New Jersey, suggesting a more homogeneous market, despite the presence of systematic differences. This profile is consistent with the regional analyses of \citeA{Gyourko2014} on the diversity of local mortgage markets.
+
+\paragraph{Logit and income.}
+
+The estimated ORs for Connecticut are very close to those for New Jersey in the Low-income group (Table~\ref{tab:or_income}): the OR is around \(0{,}70\) for Low-income households and \(0{,}89\) for Middle-income households. Belonging to the lower tail of the income distribution is thus associated with a significant reduction in approval probability, albeit in an environment with higher overall approval rates.
+
+\paragraph{Predictive performance and ROC.}
+
+Connecticut exhibits the best predictive performance in the region (Table~\ref{tab:auc_state}). In the AI period, the Logit AUC reaches about \(0{,}886\), and Random Forest and XGBoost about \(0{,}925\). The AI-period ROC curves (Figure~\ref{fig:roc_ct}) approach the optimal frontier, indicating an almost perfect alignment between estimated probabilities and lenders' decision rules. This result is consistent with the literature on the performance gains obtained through ensemble methods \cite{Friedman2001, MullainathanSpiess2017}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures_article/art_fig_ct_roc_pre_vs_ai.png}
+    \caption{ROC curves by model and period for Connecticut (pre-AI 2007--2017 and AI period 2018--2023).}
+    \label{fig:roc_ct}
+\end{figure}
+
+\paragraph{Fairness.}
+
+From a fairness standpoint, Connecticut appears slightly less polarized than NY and NJ, although disparities remain meaningful. The DI for Black borrowers is about \(0{,}87\), and around \(0{,}88\) for Asian borrowers (Table~\ref{tab:di_race_state}). The \emph{Other} and \emph{Not reported} groups lie around \(0{,}94\) and \(0{,}92\). Equal opportunity and predictive parity metrics show relatively modest gaps compared to Whites, and calibration is generally better than in the other states, suggesting somewhat lower disparate impact risk. This configuration illustrates that high performance and relatively contained disparities can coexist, without fully eliminating inequities \cite{Hardy2023}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures_article/art_fig_ct_ia_di_by_race_rf.png}
+    \caption{Disparate impact by racial group in Connecticut in the AI period (structural Random Forest, ref. White).}
+    \label{fig:di_ct}
+\end{figure}
+
+\newpage
+\section{Cross-state comparison and implications}
+
+The state-level decomposition summarized in Tables~\ref{tab:approval_rates} to \ref{tab:di_race_state} reveals a recurring combination of phenomena alongside marked specificities:
+
+\begin{itemize}
+  \item \textbf{Predictive performance: convergence toward highly powerful AI.} In all three states, AI-period AUCs substantially exceed those observed in the pre-AI period (increases of about +0{,}30). New York and New Jersey converge to AUCs around 0{,}90, while Connecticut reaches 0{,}92--0{,}93. The shift toward highly discriminating AI systems is therefore a robust regional phenomenon, not confined to a single jurisdiction, in line with broader analyses of machine learning in economics \cite{MullainathanSpiess2017}.
+  \item \textbf{Income gradients: New Jersey / Connecticut asymmetry.} New Jersey and Connecticut both display pronounced income gradients, especially for Low-income households (OR \(\approx 0{,}70\)), whereas New York shows equally significant but slightly less steep gradients (OR \(\approx 0{,}80\)). This result matters for the regulation of access-to-credit policies in areas with high income heterogeneity and resonates with evidence of declining credit access for specific household segments \cite{Bhutta2021}.
+  \item \textbf{Racial disparities: a continuum of risks.} In all three states, Black borrowers systematically exhibit lower DI values than White borrowers, with DI ranging from 0{,}80 (NJ) to 0{,}87 (CT). New Jersey appears closest to the regulatory threshold, while Connecticut combines high performance and slightly higher DI values, though still below unity. Non-disclosure of race is associated, in all states, with low DI and weaker calibration, suggesting unobserved selection mechanisms, in line with concerns raised by \citeA{BarocasSelbst2016} and \citeA{Selbst2019}.
+  \item \textbf{Tension between performance and fairness.} The more predictable (high-AUC) the decision rule becomes, the more structural differences across groups risk being locked-in by AI models. New Jersey illustrates this tension: highly accurate models coupled with DI and income gradients that brush against regulatory tolerance thresholds. This issue lies at the core of the literature on the ``ethical algorithm'' and the trade-offs between predictive accuracy and fairness \cite{KearnsRoth2020, CowgillTucker2020}.
+\end{itemize}
+
+From a peer-reviewed journal perspective, these results argue for a regulatory approach that explicitly accounts for territorial heterogeneity: merely checking global AI performance or aggregate disparate-impact thresholds can obscure local regimes that are substantially different or even problematic. This echoes work in urban economics and urban sociology showing that local housing and credit markets are deeply shaped by the history of public policies on segregation and fair housing \cite{MasseyDenton1993, Rothstein2018, Squires2017}.
+
+\section{Conclusion}
+
+Drawing on a harmonized HMDA+ACS dataset covering seventeen years and three states, this article has shown that the transition to AI-based mortgage scoring systems in the Tri-State region comes with a dual movement. On the one hand, predictive capacity surges, with AI-period AUCs around 0{,}90 in all three states, reflecting the institutionalization of highly structured decision pipelines, consistent with advances in statistical learning \cite{Friedman2001, MullainathanSpiess2017, Kleinberg2018}. On the other hand, income gradients and racial disparities remain substantial, with particularly high disparate impact risks in New Jersey and, to a lesser extent, in New York, aligning with broader diagnoses about the role of algorithmic systems in reproducing inequalities \cite{BarocasSelbst2016, Hardy2023}.
+
+Connecticut offers an interesting counterpoint: it combines the highest predictive performance with relatively less extreme fairness gaps, suggesting that efficiency and equity can, to some extent, be reconciled, albeit under specific institutional and socio-economic configurations. Two main avenues for future research emerge: (i) incorporating additional variables (credit scores, default histories, finer geographic granularity) to better disentangle fundamental risk from proxy-based bias; (ii) assessing mitigation strategies (reweighing, post-processing of scores, fairness constraints in optimization) applied at the state level rather than at a national or regional aggregate, in the spirit of \citeA{KearnsRoth2020}.
+
+As AI systems become the ``operational language'' of mortgage markets, the key challenge is no longer merely to measure their performance, but to understand how it unfolds in local contexts, and how regulators can reconcile distributive justice requirements with the statistical realities of portfolios and territories \cite{CowgillTucker2020, CFPB2019}.
+
+\bibliographystyle{apacite}
+\bibliography{reference}
+
+\end{document}
+```
