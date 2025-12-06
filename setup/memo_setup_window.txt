@@ -1,0 +1,221 @@
+# Préparer ton environnement complet pour relancer tri_state_ai proprement dans Jupyter Notebook
+
+✅ Étape 1 — Installer Python 3 et vérifier son fonctionnement
+
+ Téléchargement (Windows x64)
+ Python : https://www.python.org/downloads/windows/
+ Important : Cocher “Add Python to PATH” pendant l'installation
+ Puis tester dans CMD :
+python --version
+
+Résultat attendu → Python 3.x.x
+
+✔️ Python opérationnel
+
+################################################
+
+✅ Étape 2 — Installer Jupyter Notebook et vérifier
+
+Toujours dans CMD :
+python -m pip install --upgrade pip
+pip install notebook
+Tester :
+jupyter --version
+
+
+✔️ Jupyter est prêt
+
+################################################
+
+✅ Étape 3 — Créer & activer l’environnement virtuel
+
+Dans le dossier natif "document", créer data_credit_scoring\tri_state_ai
+Dans CMD (Drapeau + R) → aller au dossier du projet :
+cd C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai
+
+Créer l’environnement virtuel :
+python -m venv .venv
+
+Activer l’environnement virtuel:
+.\.venv\Scripts\activate
+
+📌 Tu dois voir :
+(.venv) au début de la ligne → environnement actif
+
+Ensuite :
+✔️ Installer toutes les dépendances (requirement.txt)
+
+➡️ dans le dossier tri_state_ai, crée un fichier requirement.txt dans lequel tu colle toutes les informations suivantes: 
+'''
+# === Core Python Data Science ===
+numpy>=1.26
+pandas>=2.2
+pyarrow>=16.0
+fastparquet>=2024.2
+openpyxl>=3.1
+xlrd>=2.0
+scipy>=1.13
+
+# === Visualization ===
+matplotlib>=3.9
+seaborn>=0.13
+plotly>=5.24
+missingno>=0.5.2
+
+# === Machine Learning / Fairness / Model Evaluation ===
+scikit-learn>=1.5
+xgboost>=2.1
+statsmodels>=0.14
+shap>=0.46
+imbalance-learn>=0.12
+fairlearn>=0.10.0
+
+# === Geospatial & Mapping (si besoin ACS + carto) ===
+geopandas>=1.0
+pyproj>=3.6
+shapely>=2.0
+folium>=0.17
+
+# === Data Engineering / Performance ===
+pyarrow>=16.0
+numba>=0.60
+dask>=2024.8
+polars>=1.6.0
+
+# === Download / Files / API ===
+requests>=2.32
+urllib3>=2.2
+
+# === Notebooks & Documentation ===
+jupyter
+ipykernel
+nbformat>=5.10
+nbconvert>=7.16
+jupyterlab>=4.2
+tqdm>=4.66
+
+# === Logging & Utils ===
+python-dotenv>=1.0
+loguru>=0.7.2
+
+# === Development & Code Quality ===
+black>=24.8
+isort>=5.13
+flake8>=7.1
+mypy>=1.10
+pre-commit>=3.8
+
+# === Advanced Option (Text / NLP if futur SMC + sentiment) ===
+nltk>=3.9
+spacy>=3.7
+transformers>=4.43
+
+# === Performance & Compression ===
+lz4>=4.3
+zstandard>=0.23
+
+'''
+
+➡️ 
+pip install -r requirements.txt
+Puis :
+pip install --upgrade pip
+
+pour encore se rassurer:
+pip install --upgrade pip setuptools wheel
+
+
+################################################
+
+🚀 Étape 4 — Lancer Jupyter dans l’environnement virtuel
+
+Toujours avec le venv actif :
+
+python -m notebook
+
+
+➡️ Le navigateur s’ouvre avec Jupyter
+
+A partir de github, on peut uploader le fichier 00_project_setup.ipynb 
+puis exécuter les cellule de code avec les adaptations du path du projet
+ou alors : 
+
+
+Créer un notebook dans :
+tri_state_ai/notebooks/00_project_setup.ipynb
+
+🧱 Premières cellules dans le notebook
+
+Ces blocs configurent automatiquement toute la structure du projet
+
+📌 Cellule 1 — Vérification + chemins de base
+import os
+import pathlib
+import platform
+
+# 🧩 1. Vérification de la configuration système
+print("Système :", platform.system(), platform.release())
+print("Utilisateur :", pathlib.Path.home())
+
+# 🗂️ 2. Chemins du projet
+BASE_DIR  = r"C:\Users\33669\OneDrive\Документы\data_credit_scoring"
+PROJECT    = os.path.join(BASE_DIR, "tri_state_ai")
+
+# Sous-dossiers du projet
+DATA_RAW  = os.path.join(PROJECT, "data_raw", "hmda")
+DATA_WORK = os.path.join(PROJECT, "data_work")
+NOTEBOOKS = os.path.join(PROJECT, "notebooks")
+
+# Création s’ils n’existent pas
+for path in [DATA_RAW, DATA_WORK, NOTEBOOKS]:
+    os.makedirs(path, exist_ok=True)
+
+print("\n✅ Dossiers configurés avec succès :")
+print(" - Données brutes :", DATA_RAW)
+print(" - Données traitées :", DATA_WORK)
+print(" - Notebooks :", NOTEBOOKS)
+
+
+✔️ Résultat attendu :
+3 chemins affichés + message de succès
+
+📌 Cellule 2 — Spécifique Tri-State & confirmation
+import os
+
+BASE_DIR   = r"C:\Users\33669\OneDrive\Документы\data_credit_scoring"
+PROJECT    = os.path.join(BASE_DIR, "tri_state_ai")
+DATA_RAW   = os.path.join(PROJECT, "data_raw", "hmda")
+DATA_WORK  = os.path.join(PROJECT, "data_work")
+NOTEBOOKS  = os.path.join(PROJECT, "notebooks")
+
+# Codes FIPS des États Tri-State : NY=36, NJ=34, CT=09
+TRI_STATES = {"36", "34", "09"}
+
+print("✅ Dossiers OK")
+print("DATA_RAW :", DATA_RAW)
+print("DATA_WORK:", DATA_WORK)
+print("TRI-STATES :", TRI_STATES)
+
+
+✔️ Résultat attendu :
+Dossiers & codes FIPS confirmés
+
+###########################################
+
+Teste l’import rapide pour valider en exécutant dans une cellule du notebook :
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import sklearn
+import xgboost
+import statsmodels
+import shap
+import geopandas as gpd
+
+
+Si aucune erreur → setup 100% validé
+
+###########################################
+
+On peut enfin aller sur github pour avoir accès à tout les code du chap4 et article qu'on exécutera.
