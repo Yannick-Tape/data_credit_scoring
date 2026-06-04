@@ -1,0 +1,48 @@
+
+Etape 1: 
+cd C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai
+(puis créer l’environnement virtuel si tu ne l'as jamais fait auparavant dans l'actuel dossier: python -m venv .venv)
+
+Etape 2:
+.\.venv\Scripts\activate
+python --version        (j'ai Python 3.12.8 Verifie ta version Python)
+python.exe -m pip install --upgrade pip
+
+Etape 3:
+pip list
+C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\.venv\Scripts\python.exe -m pip install -r requirements.txt
+pip list
+
+Etape 4:
+python -m notebook
+
+Etape 5:
+lancer le 00_project_setup puis le fermer   
+(Kernel ---> Restart kernel and run all cells)
+
+Etape 6: 
+recuperer la data CFPB manuellement et mettre dans le dossier \hmda
+data_credit_scoring\tri_state_ai\data_raw\hmda
+    Option	                     Valeur
+Geographic area	                ✅ Nationwide
+Records included	        ✅ All records
+Variable descriptions	        ✅ Plain language labels and HMDA codes
+lien de telechargement dejà parametré: https://www.consumerfinance.gov/data-research/hmda/historic-data/?geo=nationwide&records=all-records&field_descriptions=labels 
+
+Etape 7:
+lancer le 01_hmda_preprocessing_full_pipeline_SINGLE_NOTEBOOK   
+(Kernel ---> Restart kernel and run all cells)
+
+
+
+
+
+
+
+
+
+
+
+
+
+

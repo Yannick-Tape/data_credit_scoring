@@ -1,0 +1,7 @@
+utiliser le lien :
+
+https://www.consumerfinance.gov/data-research/hmda/historic-data/?geo=nationwide&records=all-records&field_descriptions=labels
+
+lancer le setup pour créer les dossiers
+telecharger la data et la mettre dans:
+C:\Users\33669\OneDrive\Документы\data_credit_scoring\tri_state_ai\data_raw\hmda
